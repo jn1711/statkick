@@ -121,12 +121,16 @@ export default function MatchDetail() {
         >
           <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
             <div className="flex items-center gap-4 text-center sm:text-left">
-              <div
-                className="w-12 h-12 rounded-xl flex items-center justify-center text-white font-bold text-lg"
-                style={{ backgroundColor: match.homeTeam?.color || "#3B82F6" }}
-              >
-                {match.homeTeam?.shortName?.[0]}
-              </div>
+              {match.homeTeam?.logoUrl ? (
+                <img src={match.homeTeam.logoUrl} alt="" className="w-14 h-14 object-contain" />
+              ) : (
+                <div
+                  className="w-12 h-12 rounded-xl flex items-center justify-center text-white font-bold text-lg"
+                  style={{ backgroundColor: match.homeTeam?.color || "#3B82F6" }}
+                >
+                  {match.homeTeam?.shortName?.[0]}
+                </div>
+              )}
               <div>
                 <p className="text-xl sm:text-2xl font-bold text-white">
                   {match.homeTeam?.name}
@@ -172,12 +176,16 @@ export default function MatchDetail() {
                 </p>
                 <p className="text-sm text-[#9CA3AF]">Гости</p>
               </div>
-              <div
-                className="w-12 h-12 rounded-xl flex items-center justify-center text-white font-bold text-lg"
-                style={{ backgroundColor: match.awayTeam?.color || "#EF4444" }}
-              >
-                {match.awayTeam?.shortName?.[0]}
-              </div>
+              {match.awayTeam?.logoUrl ? (
+                <img src={match.awayTeam.logoUrl} alt="" className="w-14 h-14 object-contain" />
+              ) : (
+                <div
+                  className="w-12 h-12 rounded-xl flex items-center justify-center text-white font-bold text-lg"
+                  style={{ backgroundColor: match.awayTeam?.color || "#EF4444" }}
+                >
+                  {match.awayTeam?.shortName?.[0]}
+                </div>
+              )}
             </div>
           </div>
 

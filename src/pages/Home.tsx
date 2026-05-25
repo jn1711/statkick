@@ -51,6 +51,7 @@ const PIE_COLORS = ["#00E701", "#3B82F6", "#EF4444"];
 
 export default function Home() {
   const [selectedLeague, setSelectedLeague] = useState<number | undefined>();
+  const [selectedSeason, setSelectedSeason] = useState("2026/27");
   useEffect(() => {
     const handleScroll = () => {};
     window.addEventListener("scroll", handleScroll);
@@ -58,8 +59,22 @@ export default function Home() {
   }, []);
 
   const { data: leagues } = trpc.league.list.useQuery();
+  const seasons = [
+    ...new Set(
+      leagues
+        ?.map((league) => league.season)
+        .filter((season): season is string => Boolean(season)) ?? []
+    ),
+  ];
+  const filteredLeagues = leagues?.filter((league) => league.season === selectedSeason) ?? [];
+  const analysisLeague = selectedLeague ?? filteredLeagues[0]?.id ?? leagues?.[0]?.id ?? 1;
+  const calendarStatus = selectedSeason >= "2026/27" ? "SCHEDULED" : "FINISHED";
   const { data: matches, isLoading: matchesLoading } = trpc.match.list.useQuery(
-    { leagueId: selectedLeague, status: "SCHEDULED" }
+    {
+      leagueId: selectedLeague,
+      leagueIds: selectedLeague ? undefined : filteredLeagues.map((league) => league.id),
+      status: calendarStatus,
+    }
   );
   const { data: upsets, isLoading: upsetsLoading } = trpc.match.upsets.useQuery();
   const { data: trends } = trpc.league.trends.useQuery();
@@ -123,8 +138,25 @@ export default function Home() {
             </p>
 
             {/* Search Panel */}
-            <div className="bg-[#060F1D]/90 backdrop-blur-xl rounded-xl p-4 border border-[#0B192C] max-w-lg mx-auto">
+            <div className="bg-[#060F1D]/90 backdrop-blur-xl rounded-xl p-4 border border-[#0B192C] max-w-2xl mx-auto">
               <div className="flex flex-col sm:flex-row gap-3">
+                <div className="flex-1 relative">
+                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#9CA3AF]" />
+                  <select
+                    className="w-full bg-[#030B15] border border-[#0B192C] rounded-lg pl-10 pr-4 py-2.5 text-sm text-white appearance-none focus:outline-none focus:border-[#00E701]/50"
+                    value={selectedSeason}
+                    onChange={(e) => {
+                      setSelectedSeason(e.target.value);
+                      setSelectedLeague(undefined);
+                    }}
+                  >
+                    {seasons.map((season) => (
+                      <option key={season} value={season}>
+                        {season}
+                      </option>
+                    ))}
+                  </select>
+                </div>
                 <div className="flex-1 relative">
                   <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#9CA3AF]" />
                   <select
@@ -133,7 +165,7 @@ export default function Home() {
                     onChange={(e) => setSelectedLeague(e.target.value ? Number(e.target.value) : undefined)}
                   >
                     <option value="">Все лиги</option>
-                    {leagues?.map((l) => (
+                    {filteredLeagues.map((l) => (
                       <option key={l.id} value={l.id}>
                         {l.name}
                       </option>
@@ -141,7 +173,7 @@ export default function Home() {
                   </select>
                 </div>
                 <Link
-                  to="/league/1"
+                  to={`/league/${analysisLeague}`}
                   className="flex items-center justify-center gap-2 bg-[#00E701] text-[#030B15] font-semibold px-6 py-2.5 rounded-lg hover:bg-[#00E701]/90 transition-all text-sm"
                 >
                   <Search className="w-4 h-4" />
@@ -184,13 +216,29 @@ export default function Home() {
           viewport={{ once: true }}
           variants={fadeIn}
         >
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-6">
             <div className="flex items-center gap-3">
               <Calendar className="w-5 h-5 text-[#00E701]" />
-              <h2 className="text-xl font-bold text-white">Календарь матчей</h2>
+              <h2 className="text-xl font-bold text-white">
+                {calendarStatus === "SCHEDULED" ? "Календарь матчей" : "Результаты сезона"}
+              </h2>
             </div>
-            <div className="flex gap-2">
-              {leagues?.map((l) => (
+            <div className="flex flex-wrap gap-2">
+              <select
+                value={selectedSeason}
+                onChange={(e) => {
+                  setSelectedSeason(e.target.value);
+                  setSelectedLeague(undefined);
+                }}
+                className="bg-[#060F1D] border border-[#0B192C] rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-[#00E701]/50"
+              >
+                {seasons.map((season) => (
+                  <option key={season} value={season}>
+                    {season}
+                  </option>
+                ))}
+              </select>
+              {filteredLeagues.map((l) => (
                 <button
                   key={l.id}
                   onClick={() => setSelectedLeague(selectedLeague === l.id ? undefined : l.id)}
@@ -205,7 +253,7 @@ export default function Home() {
                       : {}
                   }
                 >
-                  {l.country}
+                  {l.country === "Europe" ? "UEFA" : l.country}
                 </button>
               ))}
             </div>
@@ -247,10 +295,14 @@ export default function Home() {
                   </div>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3 flex-1">
-                      <div
-                        className="w-2 h-8 rounded-full"
-                        style={{ backgroundColor: match.homeTeam.color || "#3B82F6" }}
-                      />
+                      {match.homeTeam.logoUrl ? (
+                        <img src={match.homeTeam.logoUrl} alt="" className="w-8 h-8 object-contain" />
+                      ) : (
+                        <div
+                          className="w-2 h-8 rounded-full"
+                          style={{ backgroundColor: match.homeTeam.color || "#3B82F6" }}
+                        />
+                      )}
                       <div>
                         <p className="text-sm font-semibold text-white">
                           {match.homeTeam.shortName}
@@ -274,14 +326,18 @@ export default function Home() {
                         </p>
                         <p className="text-xs text-[#9CA3AF]">{match.awayTeam.name}</p>
                       </div>
-                      <div
-                        className="w-2 h-8 rounded-full"
-                        style={{ backgroundColor: match.awayTeam.color || "#3B82F6" }}
-                      />
+                      {match.awayTeam.logoUrl ? (
+                        <img src={match.awayTeam.logoUrl} alt="" className="w-8 h-8 object-contain" />
+                      ) : (
+                        <div
+                          className="w-2 h-8 rounded-full"
+                          style={{ backgroundColor: match.awayTeam.color || "#3B82F6" }}
+                        />
+                      )}
                     </div>
                   </div>
                   <div className="mt-3 pt-3 border-t border-[#0B192C] flex items-center justify-between text-xs text-[#9CA3AF]">
-                    <span>xG: {match.homeXg} - {match.awayXg}</span>
+                    <span>{match.dataSource?.includes("projected") ? "Прогнозный календарь" : `xG: ${match.homeXg} - ${match.awayXg}`}</span>
                     <ChevronRight className="w-4 h-4 text-[#00E701] opacity-0 group-hover:opacity-100 transition-opacity" />
                   </div>
                 </Link>

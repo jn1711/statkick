@@ -2,25 +2,55 @@ import { z } from "zod";
 import { createRouter, publicQuery } from "../middleware";
 import { getDb } from "../queries/connection";
 import { leagues, teams, matches } from "@db/schema";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, asc } from "drizzle-orm";
 import { runMonteCarloSimulation } from "../math/montecarlo";
+import { env } from "../lib/env";
+import { getFallbackFootballData } from "../data/fallback-football";
+
+async function withFallback<T>(query: () => Promise<T>, fallback: () => Promise<T>) {
+  if (!env.databaseUrl) return fallback();
+  try {
+    const result = await query();
+    if (Array.isArray(result) && result.length === 0) return fallback();
+    return result;
+  } catch {
+    return fallback();
+  }
+}
 
 export const leagueRouter = createRouter({
   list: publicQuery.query(async () => {
-    const db = getDb();
-    return db.select().from(leagues);
+    return withFallback(
+      async () => {
+        const db = getDb();
+        return db.select().from(leagues).orderBy(desc(leagues.season), asc(leagues.name));
+      },
+      async () => {
+        const data = await getFallbackFootballData();
+        return [...data.leagues].sort((a, b) => b.season.localeCompare(a.season) || a.name.localeCompare(b.name));
+      }
+    );
   }),
 
   standings: publicQuery
     .input(z.object({ leagueId: z.number() }))
     .query(async ({ input }) => {
-      const db = getDb();
-      
-      const teamsData = await db
-        .select()
-        .from(teams)
-        .where(eq(teams.leagueId, input.leagueId))
-        .orderBy(desc(teams.points));
+      const teamsData = await withFallback(
+        async () => {
+          const db = getDb();
+          return db
+            .select()
+            .from(teams)
+            .where(eq(teams.leagueId, input.leagueId))
+            .orderBy(desc(teams.points));
+        },
+        async () => {
+          const data = await getFallbackFootballData();
+          return data.teams
+            .filter((team) => team.leagueId === input.leagueId)
+            .sort((a, b) => b.points - a.points || b.goalsFor - b.goalsAgainst - (a.goalsFor - a.goalsAgainst));
+        }
+      );
       
       return teamsData.map((team, index) => ({
         ...team,
@@ -33,17 +63,21 @@ export const leagueRouter = createRouter({
   simulate: publicQuery
     .input(z.object({ leagueId: z.number() }))
     .query(async ({ input }) => {
-      const db = getDb();
-      
-      const teamsData = await db
-        .select()
-        .from(teams)
-        .where(eq(teams.leagueId, input.leagueId));
-      
-      const remainingMatches = await db
-        .select()
-        .from(matches)
-        .where(eq(matches.status, "SCHEDULED"));
+      const { teamsData, remainingMatches } = await withFallback(
+        async () => {
+          const db = getDb();
+          const teamsData = await db.select().from(teams).where(eq(teams.leagueId, input.leagueId));
+          const remainingMatches = await db.select().from(matches).where(eq(matches.status, "SCHEDULED"));
+          return { teamsData, remainingMatches };
+        },
+        async () => {
+          const data = await getFallbackFootballData();
+          return {
+            teamsData: data.teams.filter((team) => team.leagueId === input.leagueId),
+            remainingMatches: data.matches.filter((match) => match.status === "SCHEDULED"),
+          };
+        }
+      );
       
       const currentStandings = teamsData.map(t => ({
         teamId: t.id,
@@ -90,13 +124,16 @@ export const leagueRouter = createRouter({
 
   trends: publicQuery
     .query(async () => {
-      const db = getDb();
-      
-      // Calculate league-level trends
-      const allMatches = await db
-        .select()
-        .from(matches)
-        .where(eq(matches.status, "FINISHED"));
+      const allMatches = await withFallback(
+        async () => {
+          const db = getDb();
+          return db.select().from(matches).where(eq(matches.status, "FINISHED"));
+        },
+        async () => {
+          const data = await getFallbackFootballData();
+          return data.matches.filter((match) => match.status === "FINISHED");
+        }
+      );
       
       const totalMatches = allMatches.length;
       const homeWins = allMatches.filter(m => (m.homeGoals || 0) > (m.awayGoals || 0)).length;

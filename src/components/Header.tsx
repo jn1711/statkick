@@ -17,7 +17,7 @@ export default function Header() {
 
   const navItems = [
     { label: "Матчи", path: "/", icon: Activity },
-    { label: "Симулятор", path: "/league/1", icon: Trophy },
+    { label: "Симулятор", path: "/league/26", icon: Trophy },
     { label: "Методология", path: "/methodology", icon: BookOpen },
     { label: "Трансферы", path: "/transfer", icon: Shuffle },
   ];

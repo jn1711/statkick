@@ -45,6 +45,16 @@ export default function LeagueSimulation() {
   );
 
   const currentLeague = leagues?.find((l) => l.id === leagueId);
+  const seasons = [
+    ...new Set(
+      leagues
+        ?.map((league) => league.season)
+        .filter((season): season is string => Boolean(season)) ?? []
+    ),
+  ];
+  const sameCompetitionLeagues =
+    leagues?.filter((league) => league.name === currentLeague?.name && league.country === currentLeague?.country) ?? [];
+  const visibleLeagues = leagues?.filter((league) => league.season === currentLeague?.season) ?? [];
 
   // Prepare Monte Carlo chart data
   const monteCarloData = simulation?.currentStandings.map((team) => ({
@@ -84,9 +94,22 @@ export default function LeagueSimulation() {
             Сезон {currentLeague?.season || "2025/26"} • Прогнозная таблица и симуляция Монте-Карло
           </p>
 
-          {/* League selector */}
           <div className="flex gap-2 mt-4 flex-wrap">
-            {leagues?.map((l) => (
+            <select
+              value={currentLeague?.season ?? ""}
+              onChange={(event) => {
+                const next = sameCompetitionLeagues.find((league) => league.season === event.target.value);
+                if (next) window.location.href = `/league/${next.id}`;
+              }}
+              className="bg-[#060F1D] border border-[#0B192C] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#00E701]/50"
+            >
+              {seasons.map((season) => (
+                <option key={season} value={season}>
+                  {season}
+                </option>
+              ))}
+            </select>
+            {visibleLeagues.map((l) => (
               <Link
                 key={l.id}
                 to={`/league/${l.id}`}
@@ -96,7 +119,7 @@ export default function LeagueSimulation() {
                     : "bg-[#060F1D] text-[#9CA3AF] border border-[#0B192C] hover:text-white"
                 }`}
               >
-                {l.country}
+                {l.country === "Europe" ? "UEFA" : l.country}
               </Link>
             ))}
           </div>
@@ -174,10 +197,14 @@ export default function LeagueSimulation() {
                         </td>
                         <td className="py-3 px-2">
                           <div className="flex items-center gap-2">
-                            <div
-                              className="w-3 h-3 rounded-full"
-                              style={{ backgroundColor: team.color || "#3B82F6" }}
-                            />
+                            {team.logoUrl ? (
+                              <img src={team.logoUrl} alt="" className="w-6 h-6 object-contain" />
+                            ) : (
+                              <div
+                                className="w-3 h-3 rounded-full"
+                                style={{ backgroundColor: team.color || "#3B82F6" }}
+                              />
+                            )}
                             <span className="text-white font-medium">{team.name}</span>
                           </div>
                         </td>

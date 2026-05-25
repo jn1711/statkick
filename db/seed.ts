@@ -1,153 +1,494 @@
 import { getDb } from "../api/queries/connection";
 import { leagues, teams, players, matches, matchEvents } from "./schema";
 
+type Competition = {
+  code: string;
+  name: string;
+  country: string;
+  color: string;
+};
+
+type CsvRow = Record<string, string>;
+
+const COMPETITIONS: Competition[] = [
+  { code: "E0", name: "Premier League", country: "England", color: "#3D195B" },
+  { code: "SP1", name: "La Liga", country: "Spain", color: "#FF4B44" },
+  { code: "I1", name: "Serie A", country: "Italy", color: "#008FD7" },
+  { code: "D1", name: "Bundesliga", country: "Germany", color: "#D20515" },
+  { code: "F1", name: "Ligue 1", country: "France", color: "#091C3E" },
+];
+
+const HISTORICAL_SEASONS = ["2122", "2223", "2324", "2425", "2526"];
+const FUTURE_SEASONS = ["2026/27", "2027/28"];
+const SOURCE = "football-data.co.uk";
+
+const TEAM_ALIASES: Record<string, string> = {
+  "Ath Madrid": "Atletico Madrid",
+  "Betis": "Real Betis",
+  "Cadiz": "Cadiz CF",
+  "Celta": "Celta Vigo",
+  "Espanol": "Espanyol",
+  "Granada": "Granada CF",
+  "Sociedad": "Real Sociedad",
+  "Vallecano": "Rayo Vallecano",
+  "Alaves": "Deportivo Alaves",
+  "Paris SG": "Paris Saint-Germain",
+  "Inter": "Inter Milan",
+  "Milan": "AC Milan",
+  "Roma": "AS Roma",
+  "Lazio": "SS Lazio",
+  "Verona": "Hellas Verona",
+  "Ein Frankfurt": "Eintracht Frankfurt",
+  "Dortmund": "Borussia Dortmund",
+  "Bayern Munich": "FC Bayern Munich",
+  "Leverkusen": "Bayer Leverkusen",
+  "M'gladbach": "Borussia Monchengladbach",
+  "Mainz": "Mainz 05",
+  "Stuttgart": "VfB Stuttgart",
+  "Wolves": "Wolverhampton Wanderers",
+  "Man City": "Manchester City",
+  "Man United": "Manchester United",
+  "Newcastle": "Newcastle United",
+  "Nott'm Forest": "Nottingham Forest",
+  "Tottenham": "Tottenham Hotspur",
+  "West Ham": "West Ham United",
+  "Sheffield United": "Sheffield Utd",
+};
+
+const KNOWN_LOGOS: Record<string, string> = {
+  Arsenal: "https://upload.wikimedia.org/wikipedia/en/thumb/5/53/Arsenal_FC.svg/128px-Arsenal_FC.svg.png",
+  "Aston Villa": "https://upload.wikimedia.org/wikipedia/en/thumb/9/9f/Aston_Villa_logo.svg/128px-Aston_Villa_logo.svg.png",
+  Chelsea: "https://upload.wikimedia.org/wikipedia/en/thumb/c/cc/Chelsea_FC.svg/128px-Chelsea_FC.svg.png",
+  Liverpool: "https://upload.wikimedia.org/wikipedia/en/thumb/0/0c/Liverpool_FC.svg/128px-Liverpool_FC.svg.png",
+  "Manchester City": "https://upload.wikimedia.org/wikipedia/en/thumb/e/eb/Manchester_City_FC_badge.svg/128px-Manchester_City_FC_badge.svg.png",
+  "Manchester United": "https://upload.wikimedia.org/wikipedia/en/thumb/7/7a/Manchester_United_FC_crest.svg/128px-Manchester_United_FC_crest.svg.png",
+  "Newcastle United": "https://upload.wikimedia.org/wikipedia/en/thumb/5/56/Newcastle_United_Logo.svg/128px-Newcastle_United_Logo.svg.png",
+  "Tottenham Hotspur": "https://upload.wikimedia.org/wikipedia/en/thumb/b/b4/Tottenham_Hotspur.svg/128px-Tottenham_Hotspur.svg.png",
+  Barcelona: "https://upload.wikimedia.org/wikipedia/en/thumb/4/47/FC_Barcelona_%28crest%29.svg/128px-FC_Barcelona_%28crest%29.svg.png",
+  "Real Madrid": "https://upload.wikimedia.org/wikipedia/en/thumb/5/56/Real_Madrid_CF.svg/128px-Real_Madrid_CF.svg.png",
+  "Atletico Madrid": "https://upload.wikimedia.org/wikipedia/en/thumb/f/f4/Atletico_Madrid_2017_logo.svg/128px-Atletico_Madrid_2017_logo.svg.png",
+  "Real Sociedad": "https://upload.wikimedia.org/wikipedia/en/thumb/f/f1/Real_Sociedad_logo.svg/128px-Real_Sociedad_logo.svg.png",
+  "Inter Milan": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/05/FC_Internazionale_Milano_2021.svg/128px-FC_Internazionale_Milano_2021.svg.png",
+  "AC Milan": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d0/Logo_of_AC_Milan.svg/128px-Logo_of_AC_Milan.svg.png",
+  Juventus: "https://upload.wikimedia.org/wikipedia/commons/thumb/1/15/Juventus_FC_2017_logo.svg/128px-Juventus_FC_2017_logo.svg.png",
+  Napoli: "https://upload.wikimedia.org/wikipedia/commons/thumb/2/28/S.S.C._Napoli_logo.svg/128px-S.S.C._Napoli_logo.svg.png",
+  "AS Roma": "https://upload.wikimedia.org/wikipedia/en/thumb/f/f7/AS_Roma_logo_%282017%29.svg/128px-AS_Roma_logo_%282017%29.svg.png",
+  "FC Bayern Munich": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8d/FC_Bayern_M%C3%BCnchen_logo_%282024%29.svg/128px-FC_Bayern_M%C3%BCnchen_logo_%282024%29.svg.png",
+  "Borussia Dortmund": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/67/Borussia_Dortmund_logo.svg/128px-Borussia_Dortmund_logo.svg.png",
+  "Bayer Leverkusen": "https://upload.wikimedia.org/wikipedia/en/thumb/5/59/Bayer_04_Leverkusen_logo.svg/128px-Bayer_04_Leverkusen_logo.svg.png",
+  "RB Leipzig": "https://upload.wikimedia.org/wikipedia/en/thumb/0/04/RB_Leipzig_2014_logo.svg/128px-RB_Leipzig_2014_logo.svg.png",
+  "Paris Saint-Germain": "https://upload.wikimedia.org/wikipedia/en/thumb/a/a7/Paris_Saint-Germain_F.C..svg/128px-Paris_Saint-Germain_F.C..svg.png",
+  Marseille: "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d8/Olympique_Marseille_logo.svg/128px-Olympique_Marseille_logo.svg.png",
+  Lyon: "https://upload.wikimedia.org/wikipedia/en/thumb/c/c6/Olympique_Lyonnais.svg/128px-Olympique_Lyonnais.svg.png",
+  Monaco: "https://upload.wikimedia.org/wikipedia/en/thumb/c/cf/LogoASMonacoFC2021.svg/128px-LogoASMonacoFC2021.svg.png",
+};
+
+const EURO_CLUBS = [
+  "Manchester City",
+  "Arsenal",
+  "Liverpool",
+  "Real Madrid",
+  "Barcelona",
+  "Atletico Madrid",
+  "Inter Milan",
+  "AC Milan",
+  "Juventus",
+  "Napoli",
+  "FC Bayern Munich",
+  "Borussia Dortmund",
+  "Bayer Leverkusen",
+  "Paris Saint-Germain",
+  "Marseille",
+  "Monaco",
+];
+
+function seasonLabel(code: string) {
+  return `20${code.slice(0, 2)}/${code.slice(2)}`;
+}
+
+function parseCsv(text: string): CsvRow[] {
+  const rows: string[][] = [];
+  let current = "";
+  let row: string[] = [];
+  let quoted = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    const next = text[i + 1];
+
+    if (char === '"' && next === '"') {
+      current += '"';
+      i++;
+    } else if (char === '"') {
+      quoted = !quoted;
+    } else if (char === "," && !quoted) {
+      row.push(current);
+      current = "";
+    } else if ((char === "\n" || char === "\r") && !quoted) {
+      if (char === "\r" && next === "\n") i++;
+      row.push(current);
+      rows.push(row);
+      row = [];
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+
+  if (current || row.length) {
+    row.push(current);
+    rows.push(row);
+  }
+
+  const headers = rows.shift()?.map((h) => h.trim()) ?? [];
+  return rows
+    .filter((values) => values.length > 1)
+    .map((values) =>
+      Object.fromEntries(headers.map((header, index) => [header, values[index]?.trim() ?? ""]))
+    );
+}
+
+function parseDate(date: string, time?: string) {
+  const [day, month, year] = date.split("/").map(Number);
+  const [hour = 15, minute = 0] = (time || "15:00").split(":").map(Number);
+  const fullYear = year < 100 ? 2000 + year : year;
+  return new Date(fullYear, month - 1, day, hour, minute);
+}
+
+function displayName(name: string) {
+  return TEAM_ALIASES[name] ?? name;
+}
+
+function shortName(name: string) {
+  const parts = name
+    .replace(/[^A-Za-z ]/g, "")
+    .split(" ")
+    .filter(Boolean);
+  if (parts.length === 1) return parts[0].slice(0, 3).toUpperCase();
+  return parts.map((part) => part[0]).join("").slice(0, 4).toUpperCase();
+}
+
+function numberOrNull(value?: string) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function decimal(value: number) {
+  return Math.max(0.15, Math.min(4.5, value)).toFixed(2);
+}
+
+function colorFor(name: string, fallback: string) {
+  let hash = 0;
+  for (const char of name) hash = char.charCodeAt(0) + ((hash << 5) - hash);
+  return `#${((hash & 0x00ffffff) | 0x303030).toString(16).slice(-6)}` || fallback;
+}
+
+function addFixtureDates(startYear: number, roundIndex: number) {
+  const date = new Date(startYear, 7, 16 + roundIndex * 7, 15, 0);
+  if (date.getMonth() === 11 && date.getDate() > 20) date.setDate(date.getDate() + 14);
+  return date;
+}
+
+function generateRoundRobin(teamIds: number[], leagueId: number, startYear: number, source: string) {
+  const ids = teamIds.length % 2 === 0 ? [...teamIds] : [...teamIds, -1];
+  const rounds = ids.length - 1;
+  const half = ids.length / 2;
+  const fixtures = [];
+  let rotation = [...ids];
+
+  for (let round = 0; round < rounds; round++) {
+    const firstLegDate = addFixtureDates(startYear, round);
+    const secondLegDate = addFixtureDates(startYear, round + rounds);
+
+    for (let i = 0; i < half; i++) {
+      const left = rotation[i];
+      const right = rotation[rotation.length - 1 - i];
+      if (left === -1 || right === -1) continue;
+
+      const homeFirst = round % 2 === 0 ? left : right;
+      const awayFirst = round % 2 === 0 ? right : left;
+      fixtures.push({
+        homeTeamId: homeFirst,
+        awayTeamId: awayFirst,
+        leagueId,
+        matchDate: firstLegDate,
+        homeGoals: 0,
+        awayGoals: 0,
+        homeXg: "0",
+        awayXg: "0",
+        status: "SCHEDULED" as const,
+        oddsHome: "2.20",
+        oddsDraw: "3.30",
+        oddsAway: "3.20",
+        dataSource: source,
+      });
+      fixtures.push({
+        homeTeamId: awayFirst,
+        awayTeamId: homeFirst,
+        leagueId,
+        matchDate: secondLegDate,
+        homeGoals: 0,
+        awayGoals: 0,
+        homeXg: "0",
+        awayXg: "0",
+        status: "SCHEDULED" as const,
+        oddsHome: "2.20",
+        oddsDraw: "3.30",
+        oddsAway: "3.20",
+        dataSource: source,
+      });
+    }
+
+    rotation = [rotation[0], rotation[rotation.length - 1], ...rotation.slice(1, -1)];
+  }
+
+  return fixtures;
+}
+
+async function insertChunks<T extends Record<string, unknown>>(table: any, values: T[], size = 500) {
+  const db = getDb();
+  const ids: { id: number }[] = [];
+  for (let i = 0; i < values.length; i += size) {
+    const inserted = (await db.insert(table).values(values.slice(i, i + size)).$returningId()) as {
+      id: number;
+    }[];
+    ids.push(...inserted);
+  }
+  return ids;
+}
+
+async function fetchSeasonRows(season: string, competition: Competition) {
+  const url = `https://www.football-data.co.uk/mmz4281/${season}/${competition.code}.csv`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Failed to download ${url}: ${response.status}`);
+  return parseCsv(await response.text()).filter((row) => row.Date && row.HomeTeam && row.AwayTeam);
+}
+
 async function seed() {
   const db = getDb();
 
-  // Insert Leagues
-  const insertedLeagues = await db.insert(leagues).values([
-    { name: "Premier League", country: "England", season: "2025/26" },
-    { name: "La Liga", country: "Spain", season: "2025/26" },
-    { name: "Serie A", country: "Italy", season: "2025/26" },
-    { name: "Bundesliga", country: "Germany", season: "2025/26" },
-    { name: "Ligue 1", country: "France", season: "2025/26" },
-  ]).$returningId();
+  await db.delete(matchEvents);
+  await db.delete(players);
+  await db.delete(matches);
+  await db.delete(teams);
+  await db.delete(leagues);
 
-  const plId = insertedLeagues[0].id;
-  const laligaId = insertedLeagues[1].id;
-  const serieId = insertedLeagues[2].id;
-  const bundesId = insertedLeagues[3].id;
-  const ligueId = insertedLeagues[4].id;
+  const latestTeamNamesByCompetition = new Map<string, string[]>();
 
-  // Insert Teams
-  const teamData = [
-    // Premier League
-    { name: "Manchester City", shortName: "MCI", leagueId: plId, homeXg: "2.1", homeXga: "0.8", awayXg: "1.8", awayXga: "0.9", fatigueIndex: "0.35", color: "#6CABDD", points: 78, wins: 25, draws: 3, losses: 4, goalsFor: 72, goalsAgainst: 28 },
-    { name: "Liverpool", shortName: "LIV", leagueId: plId, homeXg: "1.9", homeXga: "0.9", awayXg: "1.7", awayXga: "1.0", fatigueIndex: "0.42", color: "#C8102E", points: 72, wins: 22, draws: 6, losses: 4, goalsFor: 65, goalsAgainst: 32 },
-    { name: "Arsenal", shortName: "ARS", leagueId: plId, homeXg: "1.8", homeXga: "0.7", awayXg: "1.6", awayXga: "0.8", fatigueIndex: "0.38", color: "#EF0107", points: 70, wins: 21, draws: 7, losses: 4, goalsFor: 62, goalsAgainst: 26 },
-    { name: "Manchester United", shortName: "MUN", leagueId: plId, homeXg: "1.5", homeXga: "1.2", awayXg: "1.3", awayXga: "1.4", fatigueIndex: "0.55", color: "#DA291C", points: 54, wins: 16, draws: 6, losses: 10, goalsFor: 48, goalsAgainst: 42 },
-    { name: "Chelsea", shortName: "CHE", leagueId: plId, homeXg: "1.6", homeXga: "1.1", awayXg: "1.4", awayXga: "1.3", fatigueIndex: "0.48", color: "#034694", points: 52, wins: 15, draws: 7, losses: 10, goalsFor: 50, goalsAgainst: 40 },
-    { name: "Tottenham", shortName: "TOT", leagueId: plId, homeXg: "1.7", homeXga: "1.3", awayXg: "1.5", awayXga: "1.5", fatigueIndex: "0.50", color: "#132257", points: 50, wins: 15, draws: 5, losses: 12, goalsFor: 55, goalsAgainst: 48 },
-    { name: "Newcastle United", shortName: "NEW", leagueId: plId, homeXg: "1.4", homeXga: "1.0", awayXg: "1.2", awayXga: "1.3", fatigueIndex: "0.45", color: "#241F20", points: 48, wins: 14, draws: 6, losses: 12, goalsFor: 45, goalsAgainst: 38 },
-    { name: "Aston Villa", shortName: "AVL", leagueId: plId, homeXg: "1.6", homeXga: "1.2", awayXg: "1.1", awayXga: "1.5", fatigueIndex: "0.52", color: "#95BFE5", points: 46, wins: 13, draws: 7, losses: 12, goalsFor: 42, goalsAgainst: 40 },
-    // La Liga
-    { name: "Real Madrid", shortName: "RMA", leagueId: laligaId, homeXg: "2.0", homeXga: "0.7", awayXg: "1.9", awayXga: "0.8", fatigueIndex: "0.32", color: "#FEBE10", points: 76, wins: 24, draws: 4, losses: 4, goalsFor: 70, goalsAgainst: 25 },
-    { name: "Barcelona", shortName: "BAR", leagueId: laligaId, homeXg: "1.9", homeXga: "0.8", awayXg: "1.7", awayXga: "0.9", fatigueIndex: "0.36", color: "#A50044", points: 74, wins: 23, draws: 5, losses: 4, goalsFor: 68, goalsAgainst: 28 },
-    { name: "Atletico Madrid", shortName: "ATM", leagueId: laligaId, homeXg: "1.6", homeXga: "0.7", awayXg: "1.3", awayXga: "0.9", fatigueIndex: "0.40", color: "#CB3524", points: 66, wins: 20, draws: 6, losses: 6, goalsFor: 55, goalsAgainst: 24 },
-    { name: "Sevilla", shortName: "SEV", leagueId: laligaId, homeXg: "1.4", homeXga: "1.1", awayXg: "1.1", awayXga: "1.3", fatigueIndex: "0.48", color: "#FFFFFF", points: 44, wins: 12, draws: 8, losses: 12, goalsFor: 38, goalsAgainst: 40 },
-    // Serie A
-    { name: "Inter Milan", shortName: "INT", leagueId: serieId, homeXg: "1.8", homeXga: "0.6", awayXg: "1.6", awayXga: "0.8", fatigueIndex: "0.34", color: "#010E80", points: 75, wins: 23, draws: 6, losses: 3, goalsFor: 68, goalsAgainst: 22 },
-    { name: "AC Milan", shortName: "ACM", leagueId: serieId, homeXg: "1.7", homeXga: "0.9", awayXg: "1.5", awayXga: "1.0", fatigueIndex: "0.40", color: "#FB090B", points: 65, wins: 20, draws: 5, losses: 7, goalsFor: 58, goalsAgainst: 32 },
-    { name: "Juventus", shortName: "JUV", leagueId: serieId, homeXg: "1.5", homeXga: "0.8", awayXg: "1.3", awayXga: "0.9", fatigueIndex: "0.38", color: "#FFFFFF", points: 62, wins: 18, draws: 8, losses: 6, goalsFor: 48, goalsAgainst: 26 },
-    { name: "Napoli", shortName: "NAP", leagueId: serieId, homeXg: "1.6", homeXga: "1.0", awayXg: "1.4", awayXga: "1.2", fatigueIndex: "0.46", color: "#12A0D7", points: 56, wins: 16, draws: 8, losses: 8, goalsFor: 52, goalsAgainst: 35 },
-    // Bundesliga
-    { name: "Bayern Munich", shortName: "BAY", leagueId: bundesId, homeXg: "2.2", homeXga: "0.6", awayXg: "2.0", awayXga: "0.7", fatigueIndex: "0.30", color: "#DC052D", points: 80, wins: 26, draws: 2, losses: 4, goalsFor: 82, goalsAgainst: 22 },
-    { name: "Borussia Dortmund", shortName: "BVB", leagueId: bundesId, homeXg: "1.9", homeXga: "0.9", awayXg: "1.6", awayXga: "1.2", fatigueIndex: "0.44", color: "#FDE100", points: 62, wins: 19, draws: 5, losses: 8, goalsFor: 60, goalsAgainst: 35 },
-    { name: "Bayer Leverkusen", shortName: "B04", leagueId: bundesId, homeXg: "1.7", homeXga: "0.9", awayXg: "1.5", awayXga: "1.1", fatigueIndex: "0.41", color: "#E32219", points: 64, wins: 19, draws: 7, losses: 6, goalsFor: 58, goalsAgainst: 30 },
-    // Ligue 1
-    { name: "Paris Saint-Germain", shortName: "PSG", leagueId: ligueId, homeXg: "2.1", homeXga: "0.7", awayXg: "1.9", awayXga: "0.8", fatigueIndex: "0.33", color: "#004170", points: 78, wins: 25, draws: 3, losses: 4, goalsFor: 75, goalsAgainst: 25 },
-    { name: "Marseille", shortName: "OM", leagueId: ligueId, homeXg: "1.5", homeXga: "1.0", awayXg: "1.2", awayXga: "1.3", fatigueIndex: "0.47", color: "#00B9F1", points: 52, wins: 15, draws: 7, losses: 10, goalsFor: 45, goalsAgainst: 38 },
-  ];
+  for (const season of HISTORICAL_SEASONS) {
+    for (const competition of COMPETITIONS) {
+      const rows = await fetchSeasonRows(season, competition);
+      const leagueIds = await db
+        .insert(leagues)
+        .values({
+          name: competition.name,
+          country: competition.country,
+          season: seasonLabel(season),
+        })
+        .$returningId();
+      const leagueId = leagueIds[0].id;
 
-  const insertedTeams = await db.insert(teams).values(teamData).$returningId();
-  const teamIds = insertedTeams.map(t => t.id);
+      const teamNames = [...new Set(rows.flatMap((row) => [displayName(row.HomeTeam), displayName(row.AwayTeam)]))].sort();
+      latestTeamNamesByCompetition.set(competition.code, teamNames);
 
-  // Insert Players (top players from each team)
-  const playerData = [
-    // Man City players
-    { name: "Erling Haaland", teamId: teamIds[0], position: "FWD" as const, xg: "0.85", xa: "0.15", minutes: 2520, appearances: 28, goals: 24, assists: 4 },
-    { name: "Kevin De Bruyne", teamId: teamIds[0], position: "MID" as const, xg: "0.25", xa: "0.65", minutes: 1980, appearances: 22, goals: 6, assists: 16 },
-    { name: "Phil Foden", teamId: teamIds[0], position: "MID" as const, xg: "0.35", xa: "0.35", minutes: 2340, appearances: 26, goals: 10, assists: 8 },
-    // Liverpool players
-    { name: "Mohamed Salah", teamId: teamIds[1], position: "FWD" as const, xg: "0.60", xa: "0.40", minutes: 2700, appearances: 30, goals: 18, assists: 12 },
-    { name: "Darwin Nunez", teamId: teamIds[1], position: "FWD" as const, xg: "0.55", xa: "0.20", minutes: 2160, appearances: 24, goals: 14, assists: 5 },
-    { name: "Virgil van Dijk", teamId: teamIds[1], position: "DEF" as const, xg: "0.10", xa: "0.05", minutes: 2700, appearances: 30, goals: 3, assists: 2 },
-    // Arsenal players
-    { name: "Bukayo Saka", teamId: teamIds[2], position: "FWD" as const, xg: "0.40", xa: "0.45", minutes: 2610, appearances: 29, goals: 12, assists: 13 },
-    { name: "Martin Odegaard", teamId: teamIds[2], position: "MID" as const, xg: "0.30", xa: "0.50", minutes: 2520, appearances: 28, goals: 8, assists: 14 },
-    { name: "Declan Rice", teamId: teamIds[2], position: "MID" as const, xg: "0.15", xa: "0.15", minutes: 2700, appearances: 30, goals: 5, assists: 5 },
-    // Real Madrid players
-    { name: "Vinicius Jr", teamId: teamIds[8], position: "FWD" as const, xg: "0.55", xa: "0.50", minutes: 2430, appearances: 27, goals: 16, assists: 14 },
-    { name: "Jude Bellingham", teamId: teamIds[8], position: "MID" as const, xg: "0.45", xa: "0.30", minutes: 2520, appearances: 28, goals: 14, assists: 9 },
-    { name: "Federico Valverde", teamId: teamIds[8], position: "MID" as const, xg: "0.20", xa: "0.25", minutes: 2610, appearances: 29, goals: 7, assists: 7 },
-    // Barcelona players
-    { name: "Robert Lewandowski", teamId: teamIds[9], position: "FWD" as const, xg: "0.70", xa: "0.15", minutes: 2340, appearances: 26, goals: 20, assists: 4 },
-    { name: "Pedri", teamId: teamIds[9], position: "MID" as const, xg: "0.20", xa: "0.40", minutes: 2250, appearances: 25, goals: 6, assists: 10 },
-    { name: "Lamine Yamal", teamId: teamIds[9], position: "FWD" as const, xg: "0.35", xa: "0.45", minutes: 2160, appearances: 24, goals: 9, assists: 12 },
-    // Bayern players
-    { name: "Harry Kane", teamId: teamIds[16], position: "FWD" as const, xg: "0.80", xa: "0.25", minutes: 2610, appearances: 29, goals: 26, assists: 6 },
-    { name: "Jamal Musiala", teamId: teamIds[16], position: "MID" as const, xg: "0.35", xa: "0.40", minutes: 2340, appearances: 26, goals: 10, assists: 10 },
-    { name: "Leroy Sane", teamId: teamIds[16], position: "FWD" as const, xg: "0.30", xa: "0.35", minutes: 2160, appearances: 24, goals: 8, assists: 9 },
-    // Inter players
-    { name: "Lautaro Martinez", teamId: teamIds[12], position: "FWD" as const, xg: "0.65", xa: "0.20", minutes: 2520, appearances: 28, goals: 22, assists: 5 },
-    { name: "Nicolo Barella", teamId: teamIds[12], position: "MID" as const, xg: "0.20", xa: "0.35", minutes: 2430, appearances: 27, goals: 6, assists: 10 },
-    { name: "Hakan Calhanoglu", teamId: teamIds[12], position: "MID" as const, xg: "0.20", xa: "0.40", minutes: 2520, appearances: 28, goals: 6, assists: 12 },
-    // PSG players
-    { name: "Kylian Mbappe", teamId: teamIds[19], position: "FWD" as const, xg: "0.75", xa: "0.30", minutes: 2430, appearances: 27, goals: 28, assists: 8 },
-    { name: "Ousmane Dembele", teamId: teamIds[19], position: "FWD" as const, xg: "0.35", xa: "0.40", minutes: 2160, appearances: 24, goals: 10, assists: 11 },
-    { name: "Vitinha", teamId: teamIds[19], position: "MID" as const, xg: "0.15", xa: "0.30", minutes: 2340, appearances: 26, goals: 5, assists: 9 },
-  ];
+      const stats = new Map(
+        teamNames.map((name) => [
+          name,
+          {
+            played: 0,
+            points: 0,
+            wins: 0,
+            draws: 0,
+            losses: 0,
+            goalsFor: 0,
+            goalsAgainst: 0,
+            shotsForHome: 0,
+            shotsAgainstHome: 0,
+            shotsForAway: 0,
+            shotsAgainstAway: 0,
+            homeGames: 0,
+            awayGames: 0,
+          },
+        ])
+      );
 
-  await db.insert(players).values(playerData);
+      for (const row of rows) {
+        const home = displayName(row.HomeTeam);
+        const away = displayName(row.AwayTeam);
+        const homeGoals = numberOrNull(row.FTHG);
+        const awayGoals = numberOrNull(row.FTAG);
+        if (homeGoals === null || awayGoals === null) continue;
 
-  // Insert Matches (mix of scheduled and finished)
-  const now = new Date();
-  const oneDay = 24 * 60 * 60 * 1000;
-  const matchData = [
-    // Finished matches
-    { homeTeamId: teamIds[0], awayTeamId: teamIds[1], leagueId: plId, matchDate: new Date(now.getTime() - 7 * oneDay), homeGoals: 2, awayGoals: 1, homeXg: "2.1", awayXg: "0.9", status: "FINISHED" as const, oddsHome: "1.80", oddsDraw: "3.60", oddsAway: "4.20" },
-    { homeTeamId: teamIds[2], awayTeamId: teamIds[3], leagueId: plId, matchDate: new Date(now.getTime() - 6 * oneDay), homeGoals: 3, awayGoals: 0, homeXg: "2.5", awayXg: "0.5", status: "FINISHED" as const, oddsHome: "1.45", oddsDraw: "4.50", oddsAway: "6.50" },
-    { homeTeamId: teamIds[8], awayTeamId: teamIds[9], leagueId: laligaId, matchDate: new Date(now.getTime() - 5 * oneDay), homeGoals: 2, awayGoals: 2, homeXg: "1.8", awayXg: "1.6", status: "FINISHED" as const, oddsHome: "2.10", oddsDraw: "3.40", oddsAway: "3.30" },
-    { homeTeamId: teamIds[12], awayTeamId: teamIds[13], leagueId: serieId, matchDate: new Date(now.getTime() - 4 * oneDay), homeGoals: 1, awayGoals: 0, homeXg: "1.5", awayXg: "0.8", status: "FINISHED" as const, oddsHome: "1.75", oddsDraw: "3.60", oddsAway: "4.80" },
-    { homeTeamId: teamIds[16], awayTeamId: teamIds[17], leagueId: bundesId, matchDate: new Date(now.getTime() - 3 * oneDay), homeGoals: 4, awayGoals: 1, homeXg: "2.8", awayXg: "0.9", status: "FINISHED" as const, oddsHome: "1.35", oddsDraw: "5.50", oddsAway: "7.00" },
-    // Scheduled matches
-    { homeTeamId: teamIds[1], awayTeamId: teamIds[2], leagueId: plId, matchDate: new Date(now.getTime() + 1 * oneDay), homeGoals: 0, awayGoals: 0, homeXg: "0", awayXg: "0", status: "SCHEDULED" as const, oddsHome: "2.40", oddsDraw: "3.40", oddsAway: "2.90" },
-    { homeTeamId: teamIds[4], awayTeamId: teamIds[5], leagueId: plId, matchDate: new Date(now.getTime() + 1 * oneDay), homeGoals: 0, awayGoals: 0, homeXg: "0", awayXg: "0", status: "SCHEDULED" as const, oddsHome: "2.10", oddsDraw: "3.50", oddsAway: "3.40" },
-    { homeTeamId: teamIds[9], awayTeamId: teamIds[10], leagueId: laligaId, matchDate: new Date(now.getTime() + 2 * oneDay), homeGoals: 0, awayGoals: 0, homeXg: "0", awayXg: "0", status: "SCHEDULED" as const, oddsHome: "1.65", oddsDraw: "4.00", oddsAway: "5.20" },
-    { homeTeamId: teamIds[13], awayTeamId: teamIds[14], leagueId: serieId, matchDate: new Date(now.getTime() + 2 * oneDay), homeGoals: 0, awayGoals: 0, homeXg: "0", awayXg: "0", status: "SCHEDULED" as const, oddsHome: "2.20", oddsDraw: "3.30", oddsAway: "3.30" },
-    { homeTeamId: teamIds[18], awayTeamId: teamIds[16], leagueId: bundesId, matchDate: new Date(now.getTime() + 3 * oneDay), homeGoals: 0, awayGoals: 0, homeXg: "0", awayXg: "0", status: "SCHEDULED" as const, oddsHome: "3.80", oddsDraw: "3.80", oddsAway: "1.85" },
-    { homeTeamId: teamIds[19], awayTeamId: teamIds[20], leagueId: ligueId, matchDate: new Date(now.getTime() + 1 * oneDay), homeGoals: 0, awayGoals: 0, homeXg: "0", awayXg: "0", status: "SCHEDULED" as const, oddsHome: "1.30", oddsDraw: "5.50", oddsAway: "9.00" },
-    { homeTeamId: teamIds[6], awayTeamId: teamIds[7], leagueId: plId, matchDate: new Date(now.getTime() + 3 * oneDay), homeGoals: 0, awayGoals: 0, homeXg: "0", awayXg: "0", status: "SCHEDULED" as const, oddsHome: "1.95", oddsDraw: "3.50", oddsAway: "3.80" },
-    { homeTeamId: teamIds[10], awayTeamId: teamIds[11], leagueId: laligaId, matchDate: new Date(now.getTime() + 4 * oneDay), homeGoals: 0, awayGoals: 0, homeXg: "0", awayXg: "0", status: "SCHEDULED" as const, oddsHome: "1.55", oddsDraw: "4.20", oddsAway: "5.80" },
-    { homeTeamId: teamIds[15], awayTeamId: teamIds[12], leagueId: serieId, matchDate: new Date(now.getTime() + 5 * oneDay), homeGoals: 0, awayGoals: 0, homeXg: "0", awayXg: "0", status: "SCHEDULED" as const, oddsHome: "3.40", oddsDraw: "3.50", oddsAway: "2.10" },
-    { homeTeamId: teamIds[3], awayTeamId: teamIds[0], leagueId: plId, matchDate: new Date(now.getTime() + 5 * oneDay), homeGoals: 0, awayGoals: 0, homeXg: "0", awayXg: "0", status: "SCHEDULED" as const, oddsHome: "4.50", oddsDraw: "4.00", oddsAway: "1.70" },
-    { homeTeamId: teamIds[5], awayTeamId: teamIds[4], leagueId: plId, matchDate: new Date(now.getTime() + 6 * oneDay), homeGoals: 0, awayGoals: 0, homeXg: "0", awayXg: "0", status: "SCHEDULED" as const, oddsHome: "2.60", oddsDraw: "3.40", oddsAway: "2.70" },
-    { homeTeamId: teamIds[7], awayTeamId: teamIds[6], leagueId: plId, matchDate: new Date(now.getTime() + 6 * oneDay), homeGoals: 0, awayGoals: 0, homeXg: "0", awayXg: "0", status: "SCHEDULED" as const, oddsHome: "2.30", oddsDraw: "3.40", oddsAway: "3.00" },
-    { homeTeamId: teamIds[14], awayTeamId: teamIds[13], leagueId: serieId, matchDate: new Date(now.getTime() + 7 * oneDay), homeGoals: 0, awayGoals: 0, homeXg: "0", awayXg: "0", status: "SCHEDULED" as const, oddsHome: "2.50", oddsDraw: "3.30", oddsAway: "2.80" },
-    { homeTeamId: teamIds[11], awayTeamId: teamIds[8], leagueId: laligaId, matchDate: new Date(now.getTime() + 7 * oneDay), homeGoals: 0, awayGoals: 0, homeXg: "0", awayXg: "0", status: "SCHEDULED" as const, oddsHome: "5.50", oddsDraw: "4.20", oddsAway: "1.55" },
-    { homeTeamId: teamIds[17], awayTeamId: teamIds[18], leagueId: bundesId, matchDate: new Date(now.getTime() + 7 * oneDay), homeGoals: 0, awayGoals: 0, homeXg: "0", awayXg: "0", status: "SCHEDULED" as const, oddsHome: "2.40", oddsDraw: "3.60", oddsAway: "2.70" },
-  ];
+        const homeStats = stats.get(home)!;
+        const awayStats = stats.get(away)!;
+        homeStats.played++;
+        awayStats.played++;
+        homeStats.homeGames++;
+        awayStats.awayGames++;
+        homeStats.goalsFor += homeGoals;
+        homeStats.goalsAgainst += awayGoals;
+        awayStats.goalsFor += awayGoals;
+        awayStats.goalsAgainst += homeGoals;
+        homeStats.shotsForHome += numberOrNull(row.HS) ?? homeGoals * 4 + 8;
+        homeStats.shotsAgainstHome += numberOrNull(row.AS) ?? awayGoals * 4 + 7;
+        awayStats.shotsForAway += numberOrNull(row.AS) ?? awayGoals * 4 + 7;
+        awayStats.shotsAgainstAway += numberOrNull(row.HS) ?? homeGoals * 4 + 8;
 
-  const insertedMatches = await db.insert(matches).values(matchData).$returningId();
+        if (homeGoals > awayGoals) {
+          homeStats.points += 3;
+          homeStats.wins++;
+          awayStats.losses++;
+        } else if (homeGoals < awayGoals) {
+          awayStats.points += 3;
+          awayStats.wins++;
+          homeStats.losses++;
+        } else {
+          homeStats.points++;
+          awayStats.points++;
+          homeStats.draws++;
+          awayStats.draws++;
+        }
+      }
 
-  // Insert match events for finished matches
-  const eventData = [
-    // Man City 2:1 Liverpool
-    { matchId: insertedMatches[0].id, minute: 23, type: "GOAL" as const, playerName: "E. Haaland", team: "HOME" as const },
-    { matchId: insertedMatches[0].id, minute: 45, type: "GOAL" as const, playerName: "K. De Bruyne", team: "HOME" as const },
-    { matchId: insertedMatches[0].id, minute: 67, type: "GOAL" as const, playerName: "M. Salah", team: "AWAY" as const },
-    // Arsenal 3:0 Man Utd
-    { matchId: insertedMatches[1].id, minute: 15, type: "GOAL" as const, playerName: "B. Saka", team: "HOME" as const },
-    { matchId: insertedMatches[1].id, minute: 38, type: "GOAL" as const, playerName: "M. Odegaard", team: "HOME" as const },
-    { matchId: insertedMatches[1].id, minute: 72, type: "GOAL" as const, playerName: "G. Jesus", team: "HOME" as const },
-    // Real Madrid 2:2 Barcelona
-    { matchId: insertedMatches[2].id, minute: 12, type: "GOAL" as const, playerName: "V. Jr", team: "HOME" as const },
-    { matchId: insertedMatches[2].id, minute: 34, type: "GOAL" as const, playerName: "R. Lewandowski", team: "AWAY" as const },
-    { matchId: insertedMatches[2].id, minute: 56, type: "GOAL" as const, playerName: "J. Bellingham", team: "HOME" as const },
-    { matchId: insertedMatches[2].id, minute: 89, type: "GOAL" as const, playerName: "L. Yamal", team: "AWAY" as const },
-    // Inter 1:0 AC Milan
-    { matchId: insertedMatches[3].id, minute: 67, type: "GOAL" as const, playerName: "L. Martinez", team: "HOME" as const },
-    // Bayern 4:1 Dortmund
-    { matchId: insertedMatches[4].id, minute: 8, type: "GOAL" as const, playerName: "H. Kane", team: "HOME" as const },
-    { matchId: insertedMatches[4].id, minute: 22, type: "GOAL" as const, playerName: "J. Musiala", team: "HOME" as const },
-    { matchId: insertedMatches[4].id, minute: 41, type: "GOAL" as const, playerName: "H. Kane", team: "HOME" as const },
-    { matchId: insertedMatches[4].id, minute: 55, type: "GOAL" as const, playerName: "L. Sane", team: "HOME" as const },
-    { matchId: insertedMatches[4].id, minute: 78, type: "GOAL" as const, playerName: "M. Reus", team: "AWAY" as const },
-  ];
+      const teamIds = await insertChunks(
+        teams,
+        teamNames.map((name) => {
+          const teamStats = stats.get(name)!;
+          const homeGames = Math.max(1, teamStats.homeGames);
+          const awayGames = Math.max(1, teamStats.awayGames);
+          return {
+            name,
+            shortName: shortName(name),
+            leagueId,
+            homeXg: decimal(teamStats.shotsForHome / homeGames / 9 + teamStats.goalsFor / Math.max(1, teamStats.played) * 0.2),
+            homeXga: decimal(teamStats.shotsAgainstHome / homeGames / 10),
+            awayXg: decimal(teamStats.shotsForAway / awayGames / 10 + teamStats.goalsFor / Math.max(1, teamStats.played) * 0.15),
+            awayXga: decimal(teamStats.shotsAgainstAway / awayGames / 9),
+            fatigueIndex: decimal(0.18 + Math.min(0.55, teamStats.played / 85)),
+            color: colorFor(name, competition.color),
+            logoUrl: KNOWN_LOGOS[name] ?? null,
+            points: teamStats.points,
+            wins: teamStats.wins,
+            draws: teamStats.draws,
+            losses: teamStats.losses,
+            goalsFor: teamStats.goalsFor,
+            goalsAgainst: teamStats.goalsAgainst,
+          };
+        })
+      );
+      const teamIdMap = new Map(teamNames.map((name, index) => [name, teamIds[index].id]));
 
-  await db.insert(matchEvents).values(eventData);
+      await insertChunks(
+        matches,
+        rows.map((row) => {
+          const homeGoals = numberOrNull(row.FTHG);
+          const awayGoals = numberOrNull(row.FTAG);
+          const finished = homeGoals !== null && awayGoals !== null;
+          return {
+            homeTeamId: teamIdMap.get(displayName(row.HomeTeam))!,
+            awayTeamId: teamIdMap.get(displayName(row.AwayTeam))!,
+            leagueId,
+            matchDate: parseDate(row.Date, row.Time),
+            homeGoals: homeGoals ?? 0,
+            awayGoals: awayGoals ?? 0,
+            homeXg: finished ? decimal((numberOrNull(row.HS) ?? homeGoals! * 4 + 8) / 9) : "0",
+            awayXg: finished ? decimal((numberOrNull(row.AS) ?? awayGoals! * 4 + 7) / 10) : "0",
+            status: finished ? ("FINISHED" as const) : ("SCHEDULED" as const),
+            oddsHome: row.B365H || row.AvgH || null,
+            oddsDraw: row.B365D || row.AvgD || null,
+            oddsAway: row.B365A || row.AvgA || null,
+            dataSource: SOURCE,
+          };
+        })
+      );
 
-  console.log("Seed completed successfully!");
+      console.log(`Imported ${competition.name} ${seasonLabel(season)} (${rows.length} matches)`);
+    }
+  }
+
+  for (const season of FUTURE_SEASONS) {
+    const startYear = Number(season.slice(0, 4));
+    for (const competition of COMPETITIONS) {
+      const teamNames = latestTeamNamesByCompetition.get(competition.code) ?? [];
+      const leagueIds = await db
+        .insert(leagues)
+        .values({ name: competition.name, country: competition.country, season })
+        .$returningId();
+      const leagueId = leagueIds[0].id;
+      const teamIds = await insertChunks(
+        teams,
+        teamNames.map((name) => ({
+          name,
+          shortName: shortName(name),
+          leagueId,
+          homeXg: "1.45",
+          homeXga: "1.18",
+          awayXg: "1.18",
+          awayXga: "1.38",
+          fatigueIndex: "0.30",
+          color: colorFor(name, competition.color),
+          logoUrl: KNOWN_LOGOS[name] ?? null,
+          points: 0,
+          wins: 0,
+          draws: 0,
+          losses: 0,
+          goalsFor: 0,
+          goalsAgainst: 0,
+        }))
+      );
+      await insertChunks(
+        matches,
+        generateRoundRobin(
+          teamIds.map((team) => team.id),
+          leagueId,
+          startYear,
+          "projected future fixture"
+        )
+      );
+      console.log(`Projected ${competition.name} ${season}`);
+    }
+
+    const euroIds = await db
+      .insert(leagues)
+      .values({ name: "UEFA Club Competitions", country: "Europe", season })
+      .$returningId();
+    const euroLeagueId = euroIds[0].id;
+    const euroTeams = await insertChunks(
+      teams,
+      EURO_CLUBS.map((name) => ({
+        name,
+        shortName: shortName(name),
+        leagueId: euroLeagueId,
+        homeXg: "1.70",
+        homeXga: "1.05",
+        awayXg: "1.35",
+        awayXga: "1.25",
+        fatigueIndex: "0.42",
+        color: colorFor(name, "#0E1E5B"),
+        logoUrl: KNOWN_LOGOS[name] ?? null,
+        points: 0,
+        wins: 0,
+        draws: 0,
+        losses: 0,
+        goalsFor: 0,
+        goalsAgainst: 0,
+      }))
+    );
+    await insertChunks(
+      matches,
+      generateRoundRobin(
+        euroTeams.map((team) => team.id),
+        euroLeagueId,
+        startYear,
+        "projected UEFA fixture"
+      ).slice(0, 144)
+    );
+  }
+
+  console.log("Seed completed with real historical top-5 league data and projected future fixtures.");
 }
 
-seed().catch(console.error);
+seed().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

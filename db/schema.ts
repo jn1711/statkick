@@ -44,6 +44,7 @@ export const teams = mysqlTable("teams", {
   awayXga: decimal("awayXga", { precision: 4, scale: 2 }).default("0"),
   fatigueIndex: decimal("fatigueIndex", { precision: 4, scale: 2 }).default("0"),
   color: varchar("color", { length: 7 }).default("#3B82F6"),
+  logoUrl: text("logoUrl"),
   points: int("points").default(0),
   wins: int("wins").default(0),
   draws: int("draws").default(0),
@@ -81,6 +82,7 @@ export const matches = mysqlTable("matches", {
   oddsHome: decimal("oddsHome", { precision: 4, scale: 2 }),
   oddsDraw: decimal("oddsDraw", { precision: 4, scale: 2 }),
   oddsAway: decimal("oddsAway", { precision: 4, scale: 2 }),
+  dataSource: varchar("dataSource", { length: 120 }).default("football-data.co.uk"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
