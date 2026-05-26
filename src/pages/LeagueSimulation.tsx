@@ -24,6 +24,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { motion } from "framer-motion";
+import TeamLogo from "@/components/TeamLogo";
 
 const POSITION_COLORS: Record<number, string> = {
   1: "#FEBE10",
@@ -197,14 +198,7 @@ export default function LeagueSimulation() {
                         </td>
                         <td className="py-3 px-2">
                           <div className="flex items-center gap-2">
-                            {team.logoUrl ? (
-                              <img src={team.logoUrl} alt="" className="w-6 h-6 object-contain" />
-                            ) : (
-                              <div
-                                className="w-3 h-3 rounded-full"
-                                style={{ backgroundColor: team.color || "#3B82F6" }}
-                              />
-                            )}
+                            <TeamLogo team={team} size={24} className="rounded-full" />
                             <span className="text-white font-medium">{team.name}</span>
                           </div>
                         </td>
