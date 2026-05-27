@@ -1,0 +1,115 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Team {
+  id            String  @id @default(uuid())
+  name          String  @unique
+  shortName     String?
+  country       String
+  leagueId      String?
+  league        League? @relation(fields: [leagueId], references: [id])
+  homeMatches   Match[] @relation("HomeTeam")
+  awayMatches   Match[] @relation("AwayTeam")
+  players       Player[]
+  xGHome        Float   @default(0)
+  xGAHome       Float   @default(0)
+  xGAway        Float   @default(0)
+  xGAAway       Float   @default(0)
+  homeAdvantage Float   @default(0.35)
+  marketValue   Float   @default(0)
+  europeanCoeff Float   @default(0)
+  createdAt     DateTime @default(now())
+
+  @@index([leagueId])
+}
+
+model League {
+  id              String  @id @default(uuid())
+  name            String  @unique
+  country         String?
+  tier            Int     @default(1)
+  teams           Team[]
+  matches         Match[]
+  season          String
+  isCup           Boolean @default(false)
+  isInternational Boolean @default(false)
+
+  @@index([season])
+}
+
+model Player {
+  id              String     @id @default(uuid())
+  name            String
+  teamId          String
+  team            Team       @relation(fields: [teamId], references: [id])
+  position        String
+  xG              Float      @default(0)
+  xA              Float      @default(0)
+  xG90            Float      @default(0)
+  xA90            Float      @default(0)
+  minutes         Int        @default(0)
+  games           Int        @default(0)
+  marketValue     Float      @default(0)
+  age             Int        @default(25)
+  fitness         Float      @default(1.0)
+  transferHistory Transfer[]
+
+  @@index([teamId])
+  @@index([name])
+}
+
+model Match {
+  id          String   @id @default(uuid())
+  date        DateTime
+  leagueId    String
+  league      League   @relation(fields: [leagueId], references: [id])
+  homeTeamId  String
+  homeTeam    Team     @relation("HomeTeam", fields: [homeTeamId], references: [id])
+  awayTeamId  String
+  awayTeam    Team     @relation("AwayTeam", fields: [awayTeamId], references: [id])
+  homeGoals   Int?
+  awayGoals   Int?
+  homeXg      Float?
+  awayXg      Float?
+  result      String?
+  season      String
+  matchday    Int      @default(1)
+  isPlayed    Boolean  @default(false)
+  isSimulated Boolean  @default(false)
+  fatigueHome Float    @default(0)
+  fatigueAway Float    @default(0)
+
+  @@index([leagueId, season, matchday])
+  @@index([homeTeamId])
+  @@index([awayTeamId])
+}
+
+model Transfer {
+  id        String   @id @default(uuid())
+  playerId  String
+  player    Player   @relation(fields: [playerId], references: [id])
+  fromTeamId String
+  toTeamId  String
+  season    String
+  fee       Float    @default(0)
+  isLoan    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([playerId, season])
+}
+
+model SeasonSimulation {
+  id         String   @id @default(uuid())
+  leagueId   String
+  season     String
+  iterations Int      @default(10000)
+  results    Json
+  createdAt  DateTime @default(now())
+
+  @@index([leagueId, season])
+}
