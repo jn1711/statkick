@@ -1,0 +1,3 @@
+{
+  "/api/matches/list/route": "app/api/matches/list/route.js"
+}

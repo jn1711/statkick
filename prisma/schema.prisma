@@ -4,42 +4,47 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model Team {
-  id            String  @id @default(uuid())
-  name          String  @unique
+  id            String   @id @default(uuid())
+  name          String   @unique
   shortName     String?
+  city          String?
   country       String
   leagueId      String?
-  league        League? @relation(fields: [leagueId], references: [id])
-  homeMatches   Match[] @relation("HomeTeam")
-  awayMatches   Match[] @relation("AwayTeam")
+  league        League?  @relation(fields: [leagueId], references: [id])
+  homeMatches   Match[]  @relation("HomeTeam")
+  awayMatches   Match[]  @relation("AwayTeam")
   players       Player[]
-  xGHome        Float   @default(0)
-  xGAHome       Float   @default(0)
-  xGAway        Float   @default(0)
-  xGAAway       Float   @default(0)
-  homeAdvantage Float   @default(0.35)
-  marketValue   Float   @default(0)
-  europeanCoeff Float   @default(0)
+  xGHome        Float    @default(0)
+  xGAHome       Float    @default(0)
+  xGAway        Float    @default(0)
+  xGAAway       Float    @default(0)
+  homeAdvantage Float    @default(0.35)
+  marketValue   Float    @default(0)
+  europeanCoeff Float    @default(0)
   createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   @@index([leagueId])
+  @@index([name])
 }
 
 model League {
-  id              String  @id @default(uuid())
-  name            String  @unique
+  id              String   @id @default(uuid())
+  name            String   @unique
   country         String?
-  tier            Int     @default(1)
+  tier            Int      @default(1)
   teams           Team[]
   matches         Match[]
   season          String
-  isCup           Boolean @default(false)
-  isInternational Boolean @default(false)
+  isCup           Boolean  @default(false)
+  isInternational Boolean  @default(false)
 
   @@index([season])
+  @@index([isInternational])
 }
 
 model Player {
@@ -64,41 +69,44 @@ model Player {
 }
 
 model Match {
-  id          String   @id @default(uuid())
-  date        DateTime
-  leagueId    String
-  league      League   @relation(fields: [leagueId], references: [id])
-  homeTeamId  String
-  homeTeam    Team     @relation("HomeTeam", fields: [homeTeamId], references: [id])
-  awayTeamId  String
-  awayTeam    Team     @relation("AwayTeam", fields: [awayTeamId], references: [id])
-  homeGoals   Int?
-  awayGoals   Int?
-  homeXg      Float?
-  awayXg      Float?
-  result      String?
-  season      String
-  matchday    Int      @default(1)
-  isPlayed    Boolean  @default(false)
-  isSimulated Boolean  @default(false)
-  fatigueHome Float    @default(0)
-  fatigueAway Float    @default(0)
+  id           String   @id @default(uuid())
+  date         DateTime
+  leagueId     String
+  league       League   @relation(fields: [leagueId], references: [id])
+  homeTeamId   String
+  homeTeam     Team     @relation("HomeTeam", fields: [homeTeamId], references: [id])
+  awayTeamId   String
+  awayTeam     Team     @relation("AwayTeam", fields: [awayTeamId], references: [id])
+  homeGoals    Int?
+  awayGoals    Int?
+  homeXg       Float?
+  awayXg       Float?
+  result       String?
+  season       String
+  matchday     Int      @default(1)
+  isPlayed     Boolean  @default(false)
+  isSimulated  Boolean  @default(false)
+  fatigueHome  Float    @default(0)
+  fatigueAway  Float    @default(0)
+  tacticalHome Float    @default(0)
+  tacticalAway Float    @default(0)
 
   @@index([leagueId, season, matchday])
   @@index([homeTeamId])
   @@index([awayTeamId])
+  @@index([date])
 }
 
 model Transfer {
-  id        String   @id @default(uuid())
-  playerId  String
-  player    Player   @relation(fields: [playerId], references: [id])
+  id         String   @id @default(uuid())
+  playerId   String
+  player     Player   @relation(fields: [playerId], references: [id])
   fromTeamId String
-  toTeamId  String
-  season    String
-  fee       Float    @default(0)
-  isLoan    Boolean  @default(false)
-  createdAt DateTime @default(now())
+  toTeamId   String
+  season     String
+  fee        Float    @default(0)
+  isLoan     Boolean  @default(false)
+  createdAt  DateTime @default(now())
 
   @@index([playerId, season])
 }
@@ -109,6 +117,7 @@ model SeasonSimulation {
   season     String
   iterations Int      @default(10000)
   results    Json
+  metadata   Json?
   createdAt  DateTime @default(now())
 
   @@index([leagueId, season])
