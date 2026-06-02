@@ -206,6 +206,261 @@ const KNOWN_PLAYERS: Record<string, Array<{ name: string; position: FallbackPlay
   ],
 };
 
+const SQUAD_TEMPLATES: Array<{ suffix: string; position: FallbackPlayer["position"]; weight: number }> = [
+  { suffix: "shot stopper", position: "GK", weight: 0.16 },
+  { suffix: "sweeper keeper", position: "GK", weight: 0.13 },
+  { suffix: "right back", position: "DEF", weight: 0.2 },
+  { suffix: "centre back", position: "DEF", weight: 0.24 },
+  { suffix: "left back", position: "DEF", weight: 0.18 },
+  { suffix: "holding midfielder", position: "MID", weight: 0.3 },
+  { suffix: "box to box midfielder", position: "MID", weight: 0.38 },
+  { suffix: "creative midfielder", position: "MID", weight: 0.48 },
+  { suffix: "right winger", position: "FWD", weight: 0.62 },
+  { suffix: "left winger", position: "FWD", weight: 0.58 },
+  { suffix: "centre forward", position: "FWD", weight: 0.78 },
+  { suffix: "pressing forward", position: "FWD", weight: 0.52 },
+];
+
+const REAL_PLAYER_POOL: Record<FallbackPlayer["position"], string[]> = {
+  GK: [
+    "David Raya",
+    "Alisson Becker",
+    "Gianluigi Donnarumma",
+    "Mike Maignan",
+    "Jan Oblak",
+    "Thibaut Courtois",
+    "Marc-Andre ter Stegen",
+    "Gregor Kobel",
+    "Manuel Neuer",
+    "Guglielmo Vicario",
+    "Emiliano Martinez",
+    "Andre Onana",
+    "Diogo Costa",
+    "Yann Sommer",
+    "Lucas Chevalier",
+    "Giorgi Mamardashvili",
+    "Wojciech Szczesny",
+    "Alex Meret",
+    "Nick Pope",
+    "Kepa Arrizabalaga",
+    "Ederson",
+    "Stefan Ortega",
+    "Robert Sanchez",
+    "Bart Verbruggen",
+    "Jordan Pickford",
+    "Dean Henderson",
+    "Bernd Leno",
+    "Mark Flekken",
+    "Matz Sels",
+    "Oliver Baumann",
+    "Alexander Nubel",
+    "Peter Gulacsi",
+    "Kevin Trapp",
+    "Noah Atubolu",
+    "Alex Remiro",
+    "Unai Simon",
+    "Rui Silva",
+    "Paulo Gazzaniga",
+    "Ivan Provedel",
+    "Marco Carnesecchi",
+    "Michele Di Gregorio",
+    "Vanja Milinkovic-Savic",
+    "Brice Samba",
+    "Lucas Perri",
+    "Marcin Bulka",
+    "Guillaume Restes",
+    "Walter Benitez",
+    "Andriy Lunin",
+    "Juan Musso",
+    "Predrag Rajkovic",
+  ],
+  DEF: [
+    "William Saliba",
+    "Virgil van Dijk",
+    "Ruben Dias",
+    "Gabriel Magalhaes",
+    "Achraf Hakimi",
+    "Alessandro Bastoni",
+    "Theo Hernandez",
+    "Antonio Rudiger",
+    "Jules Kounde",
+    "Dayot Upamecano",
+    "Pau Cubarsi",
+    "Marc Guehi",
+    "Micky van de Ven",
+    "Denzel Dumfries",
+    "Federico Dimarco",
+    "Nico Schlotterbeck",
+    "Jonathan Tah",
+    "Robin Le Normand",
+    "Piero Hincapie",
+    "Ben White",
+    "Reece James",
+    "Trent Alexander-Arnold",
+    "Andrew Robertson",
+    "Lisandro Martinez",
+    "Matthijs de Ligt",
+    "Kalidou Koulibaly",
+    "Ronald Araujo",
+    "Eder Militao",
+    "Ferland Mendy",
+    "Marquinhos",
+    "Josko Gvardiol",
+    "Nathan Ake",
+    "Manuel Akanji",
+    "Ibrahima Konate",
+    "Milos Kerkez",
+    "Pedro Porro",
+    "Cristian Romero",
+    "Destiny Udogie",
+    "Ezri Konsa",
+    "Pau Torres",
+    "Jarrad Branthwaite",
+    "Lewis Hall",
+    "Dan Burn",
+    "Tino Livramento",
+    "Marc Cucurella",
+    "Levi Colwill",
+    "Wesley Fofana",
+    "Alejandro Balde",
+    "Dani Carvajal",
+    "David Alaba",
+    "Min-Jae Kim",
+    "Alphonso Davies",
+    "Jeremie Frimpong",
+    "Edmond Tapsoba",
+    "Willi Orban",
+    "Mats Hummels",
+    "Bremer",
+    "Federico Gatti",
+    "Giovanni Di Lorenzo",
+    "Amir Rrahmani",
+  ],
+  MID: [
+    "Jude Bellingham",
+    "Rodri",
+    "Martin Odegaard",
+    "Pedri",
+    "Jamal Musiala",
+    "Florian Wirtz",
+    "Federico Valverde",
+    "Declan Rice",
+    "Nicolo Barella",
+    "Vitinha",
+    "Bruno Fernandes",
+    "Kevin De Bruyne",
+    "Bernardo Silva",
+    "Alexis Mac Allister",
+    "Dominik Szoboszlai",
+    "Enzo Fernandez",
+    "Moises Caicedo",
+    "Aurelien Tchouameni",
+    "Eduardo Camavinga",
+    "Frenkie de Jong",
+    "Joshua Kimmich",
+    "Granit Xhaka",
+    "Hakan Calhanoglu",
+    "Teun Koopmeiners",
+    "Sandro Tonali",
+    "Bruno Guimaraes",
+    "Joao Neves",
+    "Warren Zaire-Emery",
+    "Xavi Simons",
+    "Cole Palmer",
+    "Mikel Merino",
+    "Kai Havertz",
+    "Curtis Jones",
+    "Ryan Gravenberch",
+    "Ilkay Gundogan",
+    "Mateo Kovacic",
+    "Mason Mount",
+    "Kobbie Mainoo",
+    "James Maddison",
+    "Yves Bissouma",
+    "Morgan Rogers",
+    "Youri Tielemans",
+    "Morgan Gibbs-White",
+    "Martin Zubimendi",
+    "Gavi",
+    "Dani Olmo",
+    "Fermin Lopez",
+    "Leon Goretzka",
+    "Konrad Laimer",
+    "Aleix Garcia",
+    "Exequiel Palacios",
+    "Adrien Rabiot",
+    "Manuel Locatelli",
+    "Scott McTominay",
+    "Fabian Ruiz",
+    "Khephren Thuram",
+    "Angel Gomes",
+    "Maghnes Akliouche",
+    "Edon Zhegrova",
+  ],
+  FWD: [
+    "Erling Haaland",
+    "Kylian Mbappe",
+    "Mohamed Salah",
+    "Vinicius Junior",
+    "Bukayo Saka",
+    "Harry Kane",
+    "Lamine Yamal",
+    "Robert Lewandowski",
+    "Lautaro Martinez",
+    "Victor Osimhen",
+    "Khvicha Kvaratskhelia",
+    "Rafael Leao",
+    "Ousmane Dembele",
+    "Phil Foden",
+    "Luis Diaz",
+    "Julian Alvarez",
+    "Antoine Griezmann",
+    "Rodrygo",
+    "Raphinha",
+    "Nico Williams",
+    "Alexander Isak",
+    "Ollie Watkins",
+    "Viktor Gyokeres",
+    "Benjamin Sesko",
+    "Dusan Vlahovic",
+    "Marcus Thuram",
+    "Christian Pulisic",
+    "Karim Adeyemi",
+    "Bradley Barcola",
+    "Serhou Guirassy",
+    "Gabriel Martinelli",
+    "Gabriel Jesus",
+    "Darwin Nunez",
+    "Cody Gakpo",
+    "Diogo Jota",
+    "Jeremy Doku",
+    "Jack Grealish",
+    "Savinho",
+    "Nicolas Jackson",
+    "Noni Madueke",
+    "Christopher Nkunku",
+    "Marcus Rashford",
+    "Rasmus Hojlund",
+    "Son Heung-min",
+    "Brennan Johnson",
+    "Dominic Solanke",
+    "Anthony Gordon",
+    "Bryan Mbeumo",
+    "Jarrod Bowen",
+    "Takefusa Kubo",
+    "Ferran Torres",
+    "Goncalo Ramos",
+    "Desire Doue",
+    "Jonathan David",
+    "Jonathan Burkardt",
+    "Lois Openda",
+    "Victor Boniface",
+    "Michael Olise",
+    "Leroy Sane",
+    "Kingsley Coman",
+  ],
+};
+
 let cache:
   | {
       leagues: FallbackLeague[];
@@ -327,28 +582,78 @@ async function buildFallbackData() {
   let playerId = 1;
   const latestTeams = new Map<string, string[]>();
   const nextMatchId = () => matchId++;
+  const realPlayerName = (
+    team: FallbackTeam,
+    position: FallbackPlayer["position"],
+    index: number,
+    reservedNames: Set<string>
+  ) => {
+    const pool = REAL_PLAYER_POOL[position];
+    const start = (team.id * 7 + index * 11) % pool.length;
+
+    for (let offset = 0; offset < pool.length; offset++) {
+      const candidate = pool[(start + offset) % pool.length];
+      if (!reservedNames.has(candidate)) return candidate;
+    }
+
+    return pool[start];
+  };
+
   const addPlayers = (team: FallbackTeam) => {
-    const roster =
-      KNOWN_PLAYERS[team.name] ?? [
-        { name: `${team.name} key forward`, position: "FWD" as const },
-        { name: `${team.name} creative midfielder`, position: "MID" as const },
-        { name: `${team.name} defensive leader`, position: "DEF" as const },
-      ];
+    const knownRoster = KNOWN_PLAYERS[team.name] ?? [];
+    const knownNames = new Set(knownRoster.map(player => player.name));
+    const roster = [
+      ...knownRoster.map((player, index) => ({
+        ...player,
+        weight:
+          player.position === "FWD"
+            ? 0.82 - index * 0.08
+            : player.position === "MID"
+              ? 0.58 - index * 0.06
+              : player.position === "GK"
+                ? 0.18
+                : 0.32,
+      })),
+      ...SQUAD_TEMPLATES.map(profile => ({
+        name: realPlayerName(team, profile.position, profile.weight * 100, knownNames),
+        position: profile.position,
+        weight: profile.weight,
+      })),
+    ].slice(0, 14);
     const teamAttack = Number(team.homeXg) + Number(team.awayXg);
+    const teamDefense = Number(team.homeXga) + Number(team.awayXga);
+    const teamStrength = Math.max(0.65, Math.min(1.45, (teamAttack + 3.2 - teamDefense) / 3.2));
+
     roster.forEach((profile, index) => {
       const isForward = profile.position === "FWD";
       const isMid = profile.position === "MID";
+      const isDef = profile.position === "DEF";
+      const isGk = profile.position === "GK";
+      const variation = 0.82 + ((team.id * 17 + index * 23) % 34) / 100;
+      const minutes = Math.round((isGk ? 1700 : 900) + profile.weight * 2100 * variation);
+      const appearances = Math.max(8, Math.min(38, Math.round(minutes / 92)));
+      const xgValue =
+        teamAttack *
+        profile.weight *
+        variation *
+        (isForward ? 0.27 : isMid ? 0.15 : isDef ? 0.06 : 0.01);
+      const xaValue =
+        teamAttack *
+        profile.weight *
+        (1.08 - Math.abs(1 - variation)) *
+        (isMid ? 0.24 : isForward ? 0.13 : isDef ? 0.09 : 0.02);
+
       players.push({
         id: playerId++,
         name: profile.name,
         teamId: team.id,
         position: profile.position,
-        xg: decimal(teamAttack * (isForward ? 0.18 - index * 0.025 : isMid ? 0.09 : 0.035)),
-        xa: decimal(teamAttack * (isMid ? 0.16 - index * 0.02 : isForward ? 0.08 : 0.04)),
-        minutes: 1800 + Math.max(0, 700 - index * 120),
-        appearances: 24 + Math.max(0, 8 - index),
-        goals: Math.max(1, Math.round(teamAttack * (isForward ? 7 - index : isMid ? 3 : 1))),
-        assists: Math.max(1, Math.round(teamAttack * (isMid ? 6 - index : isForward ? 3 : 1))),
+        xg: decimal(xgValue),
+        xa: decimal(xaValue),
+        minutes,
+        appearances,
+        goals: Math.max(0, Math.round((xgValue * 8.5 + (isForward ? 4 : isMid ? 2 : 0)) * teamStrength)),
+        assists: Math.max(0, Math.round((xaValue * 8 + (isMid ? 4 : isForward ? 2 : isDef ? 1 : 0)) * teamStrength)),
         createdAt: new Date(),
       });
     });

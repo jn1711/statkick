@@ -1,9 +1,9 @@
-import React, { useState } from "react";
+import { useState } from "react";
 
 type Team = {
   id?: number;
   name?: string;
-  shortName?: string;
+  shortName?: string | null;
   logoUrl?: string | null;
   color?: string | null;
 };
@@ -25,7 +25,6 @@ export default function TeamLogo({
     .replace(/^-+|-+$/g, "");
 
   const localSrc = `/team-logos/${slug}.png`;
-  const defaultSrc = `/team-logos/default.png`;
 
   const src = !errored && (team?.logoUrl || localSrc);
 
@@ -47,7 +46,11 @@ export default function TeamLogo({
   return (
     <div
       className={`rounded-xl flex items-center justify-center text-white font-bold text-lg ${className}`}
-      style={{ width: size, height: size, backgroundColor: team?.color || "#3B82F6" }}
+      style={{
+        width: size,
+        height: size,
+        backgroundColor: team?.color || "#3B82F6",
+      }}
     >
       {initial}
     </div>

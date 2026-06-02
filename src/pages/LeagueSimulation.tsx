@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router";
 import { trpc } from "@/providers/trpc";
 import Header from "@/components/Header";
@@ -25,6 +25,7 @@ import {
 } from "recharts";
 import { motion } from "framer-motion";
 import TeamLogo from "@/components/TeamLogo";
+import { saveSimulatedMatches } from "@/lib/simulation-results";
 
 const POSITION_COLORS: Record<number, string> = {
   1: "#FEBE10",
@@ -37,33 +38,58 @@ export default function LeagueSimulation() {
   const { id } = useParams<{ id: string }>();
   const leagueId = Number(id) || 1;
   const [showSimulation, setShowSimulation] = useState(false);
+  const [simulationRun, setSimulationRun] = useState(0);
 
   const { data: leagues } = trpc.league.list.useQuery();
-  const { data: standings, isLoading: standingsLoading } = trpc.league.standings.useQuery({ leagueId });
-  const { data: simulation, isLoading: simLoading } = trpc.league.simulate.useQuery(
-    { leagueId },
-    { enabled: showSimulation }
+  const { data: standings, isLoading: standingsLoading } =
+    trpc.league.standings.useQuery({ leagueId });
+  const {
+    data: simulation,
+    isLoading: simLoading,
+    isFetching: simFetching,
+  } = trpc.league.simulate.useQuery(
+    { leagueId, runId: simulationRun },
+    {
+      enabled: showSimulation && simulationRun > 0,
+      staleTime: 0,
+      gcTime: 0,
+      refetchOnMount: "always",
+    }
   );
+  const simulationLoading = simLoading || simFetching;
+  const activeSimulation = simulationLoading ? undefined : simulation;
+  const hasSimulation = Boolean(activeSimulation);
 
-  const currentLeague = leagues?.find((l) => l.id === leagueId);
+  useEffect(() => {
+    if (!simulation?.matchResults?.length) return;
+    saveSimulatedMatches(leagueId, simulation.runId, simulation.matchResults);
+  }, [leagueId, simulation]);
+
+  const currentLeague = leagues?.find(l => l.id === leagueId);
   const seasons = [
     ...new Set(
       leagues
-        ?.map((league) => league.season)
+        ?.map(league => league.season)
         .filter((season): season is string => Boolean(season)) ?? []
     ),
   ];
   const sameCompetitionLeagues =
-    leagues?.filter((league) => league.name === currentLeague?.name && league.country === currentLeague?.country) ?? [];
-  const visibleLeagues = leagues?.filter((league) => league.season === currentLeague?.season) ?? [];
+    leagues?.filter(
+      league =>
+        league.name === currentLeague?.name &&
+        league.country === currentLeague?.country
+    ) ?? [];
+  const visibleLeagues =
+    leagues?.filter(league => league.season === currentLeague?.season) ?? [];
 
   // Prepare Monte Carlo chart data
-  const monteCarloData = simulation?.currentStandings.map((team) => ({
-    name: team.shortName || team.name.slice(0, 3),
-    champion: team.championProbability || 0,
-    top4: (team.top4Probability || 0) - (team.championProbability || 0),
-    relegation: team.relegationProbability || 0,
-  })) || [];
+  const monteCarloData =
+    simulation?.currentStandings.map(team => ({
+      name: team.shortName || team.name.slice(0, 3),
+      champion: team.championProbability || 0,
+      top4: (team.top4Probability || 0) - (team.championProbability || 0),
+      relegation: team.relegationProbability || 0,
+    })) || [];
 
   return (
     <div className="min-h-screen bg-[#030B15]">
@@ -92,25 +118,28 @@ export default function LeagueSimulation() {
             </h1>
           </div>
           <p className="text-[#9CA3AF] text-sm">
-            Сезон {currentLeague?.season || "2025/26"} • Прогнозная таблица и симуляция Монте-Карло
+            Сезон {currentLeague?.season || "2025/26"} • Прогнозная таблица и
+            симуляция Монте-Карло
           </p>
 
           <div className="flex gap-2 mt-4 flex-wrap">
             <select
               value={currentLeague?.season ?? ""}
-              onChange={(event) => {
-                const next = sameCompetitionLeagues.find((league) => league.season === event.target.value);
+              onChange={event => {
+                const next = sameCompetitionLeagues.find(
+                  league => league.season === event.target.value
+                );
                 if (next) window.location.href = `/league/${next.id}`;
               }}
               className="bg-[#060F1D] border border-[#0B192C] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#00E701]/50"
             >
-              {seasons.map((season) => (
+              {seasons.map(season => (
                 <option key={season} value={season}>
                   {season}
                 </option>
               ))}
             </select>
-            {visibleLeagues.map((l) => (
+            {visibleLeagues.map(l => (
               <Link
                 key={l.id}
                 to={`/league/${l.id}`}
@@ -136,12 +165,22 @@ export default function LeagueSimulation() {
           <div className="flex items-center gap-3 mb-6">
             <BarChart3 className="w-5 h-5 text-[#3B82F6]" />
             <h2 className="text-lg font-bold text-white">Турнирная таблица</h2>
-            {simulation && (
+            {hasSimulation && (
               <span className="text-xs text-[#9CA3AF] ml-auto">
-                xPTS = ожидаемые очки
+                Полный сценарий сезона #{activeSimulation?.runId}
               </span>
             )}
           </div>
+          {hasSimulation && (
+            <div className="mb-4 flex flex-wrap gap-2 text-xs text-[#9CA3AF]">
+              <span className="rounded-md border border-[#0B192C] bg-[#060F1D] px-2 py-1">
+                Симулировано матчей: {activeSimulation?.simulatedMatches}
+              </span>
+              <span className="rounded-md border border-[#0B192C] bg-[#060F1D] px-2 py-1">
+                Историческая база: {activeSimulation?.historicalMatches}
+              </span>
+            </div>
+          )}
 
           {standingsLoading ? (
             <div className="flex items-center justify-center py-12">
@@ -162,7 +201,7 @@ export default function LeagueSimulation() {
                     <th className="text-center py-3 px-2 w-16">ГП</th>
                     <th className="text-center py-3 px-2 w-12">+/-</th>
                     <th className="text-center py-3 px-2 w-14">О</th>
-                    {simulation && (
+                    {hasSimulation && (
                       <>
                         <th className="text-center py-3 px-2 w-20">Чемп %</th>
                         <th className="text-center py-3 px-2 w-20">Топ-4 %</th>
@@ -172,93 +211,123 @@ export default function LeagueSimulation() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(simulation?.currentStandings || standings || [])?.map((team, index) => {
-                    const position = index + 1;
-                    const standingsList = simulation?.currentStandings || standings || [];
-                    const isChampionsLeague = position <= 4;
-                    const isRelegation = standingsList.length > 0 && position > standingsList.length - 3;
-                    const matchesPlayed = (team.wins || 0) + (team.draws || 0) + (team.losses || 0);
-                    const goalDiff = (team.goalsFor || 0) - (team.goalsAgainst || 0);
-                    const simTeam = simulation?.currentStandings?.find((t) => t.id === team.id);
-                    
-                    return (
-                      <tr
-                        key={team.id}
-                        className={`text-sm border-b border-[#0B192C]/50 hover:bg-white/5 transition-colors ${
-                          isChampionsLeague ? "bg-[#00E701]/5" : ""
-                        } ${isRelegation ? "bg-[#EF4444]/5" : ""}`}
-                      >
-                        <td className="py-3 px-2">
-                          <span
-                            className="font-bold font-mono-data"
-                            style={{ color: POSITION_COLORS[position] || "#9CA3AF" }}
-                          >
-                            {position}
-                          </span>
-                        </td>
-                        <td className="py-3 px-2">
-                          <div className="flex items-center gap-2">
-                            <TeamLogo team={team} size={24} className="rounded-full" />
-                            <span className="text-white font-medium">{team.name}</span>
-                          </div>
-                        </td>
-                        <td className="text-center py-3 px-2 text-[#9CA3AF] font-mono-data">
-                          {matchesPlayed}
-                        </td>
-                        <td className="text-center py-3 px-2 text-[#00E701] font-mono-data">
-                          {team.wins}
-                        </td>
-                        <td className="text-center py-3 px-2 text-[#3B82F6] font-mono-data">
-                          {team.draws}
-                        </td>
-                        <td className="text-center py-3 px-2 text-[#EF4444] font-mono-data">
-                          {team.losses}
-                        </td>
-                        <td className="text-center py-3 px-2 text-[#9CA3AF] font-mono-data">
-                          {team.goalsFor}
-                        </td>
-                        <td className="text-center py-3 px-2 text-[#9CA3AF] font-mono-data">
-                          {team.goalsAgainst}
-                        </td>
-                        <td
-                          className="text-center py-3 px-2 font-mono-data"
-                          style={{ color: goalDiff >= 0 ? "#00E701" : "#EF4444" }}
+                  {(
+                    (hasSimulation ? activeSimulation?.currentStandings : standings) ||
+                    []
+                  )?.map(
+                    (team, index) => {
+                      const position = index + 1;
+                      const standingsList =
+                        (hasSimulation ? activeSimulation?.currentStandings : standings) ||
+                        [];
+                      const isChampionsLeague = position <= 4;
+                      const isRelegation =
+                        standingsList.length > 0 &&
+                        position > standingsList.length - 3;
+                      const matchesPlayed =
+                        (team.wins || 0) +
+                        (team.draws || 0) +
+                        (team.losses || 0);
+                      const goalDiff =
+                        (team.goalsFor || 0) - (team.goalsAgainst || 0);
+                      const simTeam = hasSimulation
+                        ? activeSimulation?.currentStandings?.find(
+                            t => t.id === team.id
+                          )
+                        : undefined;
+
+                      return (
+                        <tr
+                          key={team.id}
+                          className={`text-sm border-b border-[#0B192C]/50 hover:bg-white/5 transition-colors ${
+                            isChampionsLeague ? "bg-[#00E701]/5" : ""
+                          } ${isRelegation ? "bg-[#EF4444]/5" : ""}`}
                         >
-                          {goalDiff > 0 ? "+" : ""}
-                          {goalDiff}
-                        </td>
-                        <td className="text-center py-3 px-2">
-                          <span className="font-bold text-white font-mono-data">
-                            {team.points}
-                          </span>
-                        </td>
-                        {simulation && simTeam && (
-                          <>
-                            <td className="text-center py-3 px-2">
-                              <span className="text-[#FEBE10] font-mono-data font-bold">
-                                {simTeam.championProbability || 0}%
+                          <td className="py-3 px-2">
+                            <span
+                              className="font-bold font-mono-data"
+                              style={{
+                                color: POSITION_COLORS[position] || "#9CA3AF",
+                              }}
+                            >
+                              {position}
+                            </span>
+                          </td>
+                          <td className="py-3 px-2">
+                            <div className="flex items-center gap-2">
+                              <TeamLogo
+                                team={team}
+                                size={24}
+                                className="rounded-full"
+                              />
+                              <span className="text-white font-medium">
+                                {team.name}
                               </span>
-                            </td>
-                            <td className="text-center py-3 px-2">
-                              <span className="text-[#3B82F6] font-mono-data">
-                                {simTeam.top4Probability || 0}%
-                              </span>
-                            </td>
-                            <td className="text-center py-3 px-2">
-                              <span
-                                className="font-mono-data"
-                                style={{
-                                  color: (simTeam.relegationProbability || 0) > 30 ? "#EF4444" : "#9CA3AF",
-                                }}
-                              >
-                                {simTeam.relegationProbability || 0}%
-                              </span>
-                            </td>
-                          </>
-                        )}
-                      </tr>
-                    );
-                  })}
+                            </div>
+                          </td>
+                          <td className="text-center py-3 px-2 text-[#9CA3AF] font-mono-data">
+                            {matchesPlayed}
+                          </td>
+                          <td className="text-center py-3 px-2 text-[#00E701] font-mono-data">
+                            {team.wins}
+                          </td>
+                          <td className="text-center py-3 px-2 text-[#3B82F6] font-mono-data">
+                            {team.draws}
+                          </td>
+                          <td className="text-center py-3 px-2 text-[#EF4444] font-mono-data">
+                            {team.losses}
+                          </td>
+                          <td className="text-center py-3 px-2 text-[#9CA3AF] font-mono-data">
+                            {team.goalsFor}
+                          </td>
+                          <td className="text-center py-3 px-2 text-[#9CA3AF] font-mono-data">
+                            {team.goalsAgainst}
+                          </td>
+                          <td
+                            className="text-center py-3 px-2 font-mono-data"
+                            style={{
+                              color: goalDiff >= 0 ? "#00E701" : "#EF4444",
+                            }}
+                          >
+                            {goalDiff > 0 ? "+" : ""}
+                            {goalDiff}
+                          </td>
+                          <td className="text-center py-3 px-2">
+                            <span className="font-bold text-white font-mono-data">
+                              {team.points}
+                            </span>
+                          </td>
+                          {hasSimulation && simTeam && (
+                            <>
+                              <td className="text-center py-3 px-2">
+                                <span className="text-[#FEBE10] font-mono-data font-bold">
+                                  {simTeam.championProbability || 0}%
+                                </span>
+                              </td>
+                              <td className="text-center py-3 px-2">
+                                <span className="text-[#3B82F6] font-mono-data">
+                                  {simTeam.top4Probability || 0}%
+                                </span>
+                              </td>
+                              <td className="text-center py-3 px-2">
+                                <span
+                                  className="font-mono-data"
+                                  style={{
+                                    color:
+                                      (simTeam.relegationProbability || 0) > 30
+                                        ? "#EF4444"
+                                        : "#9CA3AF",
+                                  }}
+                                >
+                                  {simTeam.relegationProbability || 0}%
+                                </span>
+                              </td>
+                            </>
+                          )}
+                        </tr>
+                      );
+                    }
+                  )}
                 </tbody>
               </table>
             </div>
@@ -287,35 +356,51 @@ export default function LeagueSimulation() {
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-3">
               <Shield className="w-5 h-5 text-[#A855F7]" />
-              <h2 className="text-lg font-bold text-white">Симуляция Монте-Карло</h2>
+              <h2 className="text-lg font-bold text-white">
+                Симуляция Монте-Карло
+              </h2>
             </div>
             <button
-              onClick={() => setShowSimulation(!showSimulation)}
+              onClick={() => {
+                setShowSimulation(true);
+                setSimulationRun(run => run + 1);
+              }}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                 showSimulation
                   ? "bg-[#A855F7] text-white"
                   : "bg-[#060F1D] text-[#A855F7] border border-[#A855F7]/30 hover:bg-[#A855F7]/10"
               }`}
             >
-              <Play className="w-4 h-4" />
+              {simulationLoading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Play className="w-4 h-4" />
+              )}
               {showSimulation ? "Обновить" : "Запустить 10,000 симуляций"}
             </button>
           </div>
 
           {showSimulation ? (
-            simLoading ? (
+            simulationLoading ? (
               <div className="flex flex-col items-center justify-center py-12">
                 <Loader2 className="w-10 h-10 animate-spin text-[#A855F7] mb-4" />
-                <p className="text-sm text-[#9CA3AF]">Выполняется симуляция...</p>
+                <p className="text-sm text-[#9CA3AF]">
+                  Выполняется симуляция...
+                </p>
               </div>
             ) : (
               <>
                 <p className="text-sm text-[#9CA3AF] mb-4">
-                  Распределение вероятностей по итогам 10,000 симуляций оставшихся матчей сезона.
+                  Вероятности рассчитаны по 10,000 прогонам, таблица сверху
+                  показывает один полный сценарий сезона.
                 </p>
 
                 <ResponsiveContainer width="100%" height={400}>
-                  <BarChart data={monteCarloData} layout="vertical" margin={{ left: 20 }}>
+                  <BarChart
+                    data={monteCarloData}
+                    layout="vertical"
+                    margin={{ left: 20 }}
+                  >
                     <CartesianGrid strokeDasharray="3 3" stroke="#0B192C" />
                     <XAxis type="number" stroke="#9CA3AF" fontSize={12} />
                     <YAxis
@@ -333,15 +418,31 @@ export default function LeagueSimulation() {
                         color: "#F9FAFB",
                       }}
                     />
-                    <Bar dataKey="champion" name="Чемпионство %" stackId="a" fill="#FEBE10" radius={[0, 4, 4, 0]} />
-                    <Bar dataKey="top4" name="Топ-4 %" stackId="a" fill="#3B82F6" />
-                    <Bar dataKey="relegation" name="Вылет %" stackId="a" fill="#EF4444" />
+                    <Bar
+                      dataKey="champion"
+                      name="Чемпионство %"
+                      stackId="a"
+                      fill="#FEBE10"
+                      radius={[0, 4, 4, 0]}
+                    />
+                    <Bar
+                      dataKey="top4"
+                      name="Топ-4 %"
+                      stackId="a"
+                      fill="#3B82F6"
+                    />
+                    <Bar
+                      dataKey="relegation"
+                      name="Вылет %"
+                      stackId="a"
+                      fill="#EF4444"
+                    />
                   </BarChart>
                 </ResponsiveContainer>
 
                 {/* Key probabilities cards */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
-                  {simulation?.currentStandings.slice(0, 3).map((team) => (
+                  {simulation?.currentStandings.slice(0, 3).map(team => (
                     <div
                       key={team.id}
                       className="bg-[#060F1D] rounded-lg p-4 border border-[#0B192C]"
@@ -351,7 +452,9 @@ export default function LeagueSimulation() {
                           className="w-3 h-3 rounded-full"
                           style={{ backgroundColor: team.color || "#3B82F6" }}
                         />
-                        <span className="text-sm text-white font-medium">{team.name}</span>
+                        <span className="text-sm text-white font-medium">
+                          {team.name}
+                        </span>
                       </div>
                       <div className="grid grid-cols-3 gap-2 text-center">
                         <div>
@@ -398,17 +501,29 @@ export default function LeagueSimulation() {
           transition={{ delay: 0.3 }}
           className="card-dark rounded-xl p-6"
         >
-          <h2 className="text-lg font-bold text-white mb-6">Текущая форма команд</h2>
+          <h2 className="text-lg font-bold text-white mb-6">
+            Текущая форма команд
+          </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {standings?.slice(0, 6).map((team) => {
+            {standings?.slice(0, 6).map(team => {
               const recentForm = [
-                { result: team.wins && team.wins > 15 ? "W" : "D", icon: team.wins && team.wins > 15 ? ChevronUp : Minus },
+                {
+                  result: team.wins && team.wins > 15 ? "W" : "D",
+                  icon: team.wins && team.wins > 15 ? ChevronUp : Minus,
+                },
                 { result: "W", icon: ChevronUp },
-                { result: team.draws && team.draws > 5 ? "D" : "W", icon: team.draws && team.draws > 5 ? Minus : ChevronUp },
+                {
+                  result: team.draws && team.draws > 5 ? "D" : "W",
+                  icon: team.draws && team.draws > 5 ? Minus : ChevronUp,
+                },
                 { result: "W", icon: ChevronUp },
-                { result: team.losses && team.losses > 8 ? "L" : "W", icon: team.losses && team.losses > 8 ? ChevronDown : ChevronUp },
+                {
+                  result: team.losses && team.losses > 8 ? "L" : "W",
+                  icon:
+                    team.losses && team.losses > 8 ? ChevronDown : ChevronUp,
+                },
               ];
-              
+
               return (
                 <div
                   key={team.id}
@@ -421,7 +536,9 @@ export default function LeagueSimulation() {
                     >
                       {team.shortName?.slice(0, 2)}
                     </div>
-                    <span className="text-sm text-white font-medium">{team.name}</span>
+                    <span className="text-sm text-white font-medium">
+                      {team.name}
+                    </span>
                   </div>
                   <div className="flex items-center gap-1">
                     {recentForm.map((f, i) => (
@@ -431,8 +548,8 @@ export default function LeagueSimulation() {
                           f.result === "W"
                             ? "bg-[#00E701]/20 text-[#00E701]"
                             : f.result === "D"
-                            ? "bg-[#3B82F6]/20 text-[#3B82F6]"
-                            : "bg-[#EF4444]/20 text-[#EF4444]"
+                              ? "bg-[#3B82F6]/20 text-[#3B82F6]"
+                              : "bg-[#EF4444]/20 text-[#EF4444]"
                         }`}
                       >
                         {f.result}

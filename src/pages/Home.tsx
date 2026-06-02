@@ -1,6 +1,10 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router";
 import { trpc } from "@/providers/trpc";
+import {
+  getStoredSimulatedMatches,
+  type StoredSimulatedMatch,
+} from "@/lib/simulation-results";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import SportTicker from "@/components/SportTicker";
@@ -51,7 +55,13 @@ const PIE_COLORS = ["#00E701", "#3B82F6", "#EF4444"];
 
 export default function Home() {
   const [selectedLeague, setSelectedLeague] = useState<number | undefined>();
-  const [selectedSeason, setSelectedSeason] = useState("2026/27");
+  const [selectedSeason, setSelectedSeason] = useState("2025/26");
+  const [simulatedMatches, setSimulatedMatches] = useState<
+    Record<string, StoredSimulatedMatch>
+  >(() =>
+    typeof window === "undefined" ? {} : getStoredSimulatedMatches()
+  );
+
   useEffect(() => {
     const handleScroll = () => {};
     window.addEventListener("scroll", handleScroll);
@@ -66,6 +76,32 @@ export default function Home() {
         .filter((season): season is string => Boolean(season)) ?? []
     ),
   ];
+  useEffect(() => {
+    if (!seasons.length || seasons.includes(selectedSeason)) return;
+    setSelectedSeason(seasons[0]);
+  }, [seasons, selectedSeason]);
+
+  useEffect(() => {
+    const syncSimulatedMatches = () =>
+      setSimulatedMatches(getStoredSimulatedMatches());
+
+    window.addEventListener("storage", syncSimulatedMatches);
+    window.addEventListener(
+      "statkick:simulation-results",
+      syncSimulatedMatches
+    );
+    window.addEventListener("focus", syncSimulatedMatches);
+
+    return () => {
+      window.removeEventListener("storage", syncSimulatedMatches);
+      window.removeEventListener(
+        "statkick:simulation-results",
+        syncSimulatedMatches
+      );
+      window.removeEventListener("focus", syncSimulatedMatches);
+    };
+  }, []);
+
   const filteredLeagues = leagues?.filter((league) => league.season === selectedSeason) ?? [];
   const analysisLeague = selectedLeague ?? filteredLeagues[0]?.id ?? leagues?.[0]?.id ?? 1;
   const calendarStatus = selectedSeason >= "2026/27" ? "SCHEDULED" : "FINISHED";
@@ -265,12 +301,30 @@ export default function Home() {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {matches?.slice(0, 9).map((match) => (
-                <Link
-                  key={match.id}
-                  to={`/match/${match.id}`}
-                  className="card-dark rounded-xl p-4 hover:border-[#00E701]/30 transition-all group"
-                >
+              {matches?.slice(0, 9).map((match) => {
+                const simulatedMatch = simulatedMatches[String(match.id)];
+                const isSimulated =
+                  match.status === "SCHEDULED" && Boolean(simulatedMatch);
+                const displayStatus = isSimulated ? "SIMULATED" : match.status;
+                const homeGoals = isSimulated
+                  ? simulatedMatch.homeGoals
+                  : match.homeGoals;
+                const awayGoals = isSimulated
+                  ? simulatedMatch.awayGoals
+                  : match.awayGoals;
+                const homeXg = isSimulated
+                  ? simulatedMatch.homeXg
+                  : match.homeXg;
+                const awayXg = isSimulated
+                  ? simulatedMatch.awayXg
+                  : match.awayXg;
+
+                return (
+                  <Link
+                    key={match.id}
+                    to={`/match/${match.id}`}
+                    className="card-dark rounded-xl p-4 hover:border-[#00E701]/30 transition-all group"
+                  >
                   <div className="flex items-center justify-between mb-3">
                     <span className="text-xs text-[#9CA3AF]">
                       {new Date(match.matchDate).toLocaleDateString("ru-RU", {
@@ -283,14 +337,25 @@ export default function Home() {
                     <span
                       className="text-xs px-2 py-0.5 rounded-full font-medium"
                       style={{
-                        color: match.status === "SCHEDULED" ? "#3B82F6" : "#00E701",
+                        color:
+                          displayStatus === "SCHEDULED"
+                            ? "#3B82F6"
+                            : displayStatus === "SIMULATED"
+                              ? "#A855F7"
+                              : "#00E701",
                         backgroundColor:
-                          match.status === "SCHEDULED"
+                          displayStatus === "SCHEDULED"
                             ? "rgba(59,130,246,0.1)"
-                            : "rgba(0,231,1,0.1)",
+                            : displayStatus === "SIMULATED"
+                              ? "rgba(168,85,247,0.12)"
+                              : "rgba(0,231,1,0.1)",
                       }}
                     >
-                      {match.status === "SCHEDULED" ? "Предстоит" : "Завершён"}
+                      {displayStatus === "SCHEDULED"
+                        ? "Предстоит"
+                        : displayStatus === "SIMULATED"
+                          ? "Симуляция"
+                          : "Завершён"}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
@@ -311,9 +376,9 @@ export default function Home() {
                       </div>
                     </div>
                     <div className="text-center px-4">
-                      {match.status === "FINISHED" ? (
+                      {displayStatus !== "SCHEDULED" ? (
                         <span className="text-lg font-bold text-[#00E701] font-mono-data">
-                          {match.homeGoals}:{match.awayGoals}
+                          {homeGoals}:{awayGoals}
                         </span>
                       ) : (
                         <span className="text-sm text-[#9CA3AF]">vs</span>
@@ -337,11 +402,18 @@ export default function Home() {
                     </div>
                   </div>
                   <div className="mt-3 pt-3 border-t border-[#0B192C] flex items-center justify-between text-xs text-[#9CA3AF]">
-                    <span>{match.dataSource?.includes("projected") ? "Прогнозный календарь" : `xG: ${match.homeXg} - ${match.awayXg}`}</span>
+                    <span>
+                      {isSimulated
+                        ? `Симуляция #${simulatedMatch.runId} • xG: ${homeXg} - ${awayXg}`
+                        : match.dataSource?.includes("projected")
+                          ? "Будущий календарь"
+                          : `xG: ${homeXg} - ${awayXg}`}
+                    </span>
                     <ChevronRight className="w-4 h-4 text-[#00E701] opacity-0 group-hover:opacity-100 transition-opacity" />
                   </div>
-                </Link>
-              ))}
+                  </Link>
+                );
+              })}
             </div>
           )}
         </motion.section>

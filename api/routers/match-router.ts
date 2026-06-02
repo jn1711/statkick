@@ -19,6 +19,101 @@ async function withFallback<T>(query: () => Promise<T>, fallback: () => Promise<
   }
 }
 
+type TeamLike = {
+  id: number;
+  name: string;
+  homeXg?: unknown;
+  homeXga?: unknown;
+  awayXg?: unknown;
+  awayXga?: unknown;
+  fatigueIndex?: unknown;
+};
+
+type MatchLike = {
+  id?: number;
+  homeTeamId: number;
+  awayTeamId: number;
+  leagueId: number;
+  matchDate: Date;
+  homeGoals?: number | null;
+  awayGoals?: number | null;
+  homeXg?: unknown;
+  awayXg?: unknown;
+  status?: "SCHEDULED" | "LIVE" | "FINISHED" | null;
+};
+
+function toNumber(value: unknown, fallback = 0) {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : fallback;
+}
+
+function normalizeName(name: string) {
+  return name.trim().toLowerCase();
+}
+
+function getRecentTeamForm(
+  team: TeamLike,
+  allTeams: TeamLike[],
+  allMatches: MatchLike[],
+  beforeDate: Date,
+  limit = 5
+) {
+  const teamsById = new Map(allTeams.map(item => [item.id, item]));
+  const teamName = normalizeName(team.name);
+
+  return allMatches
+    .filter(match => {
+      if (match.status !== "FINISHED" || match.matchDate >= beforeDate) return false;
+      const homeTeam = teamsById.get(match.homeTeamId);
+      const awayTeam = teamsById.get(match.awayTeamId);
+      return normalizeName(homeTeam?.name ?? "") === teamName || normalizeName(awayTeam?.name ?? "") === teamName;
+    })
+    .sort((a, b) => b.matchDate.getTime() - a.matchDate.getTime())
+    .slice(0, limit)
+    .map((match, index) => {
+      const homeTeam = teamsById.get(match.homeTeamId);
+      const isHome = normalizeName(homeTeam?.name ?? "") === teamName;
+      const goalsFor = isHome ? toNumber(match.homeGoals) : toNumber(match.awayGoals);
+      const goalsAgainst = isHome ? toNumber(match.awayGoals) : toNumber(match.homeGoals);
+      const xg = isHome
+        ? toNumber(match.homeXg, goalsFor * 0.45 + 0.85)
+        : toNumber(match.awayXg, goalsFor * 0.45 + 0.75);
+      const xga = isHome
+        ? toNumber(match.awayXg, goalsAgainst * 0.45 + 0.75)
+        : toNumber(match.homeXg, goalsAgainst * 0.45 + 0.85);
+
+      return {
+        match: `М${limit - index}`,
+        xG: Number(xg.toFixed(2)),
+        xGA: Number(xga.toFixed(2)),
+        score: `${goalsFor}:${goalsAgainst}`,
+        result: goalsFor > goalsAgainst ? "W" : goalsFor === goalsAgainst ? "D" : "L",
+      };
+    })
+    .reverse();
+}
+
+function getRestDays(team: TeamLike, allTeams: TeamLike[], allMatches: MatchLike[], matchDate: Date) {
+  const teamsById = new Map(allTeams.map(item => [item.id, item]));
+  const teamName = normalizeName(team.name);
+  const lastMatch = allMatches
+    .filter(match => {
+      if (match.status !== "FINISHED" || match.matchDate >= matchDate) return false;
+      const homeTeam = teamsById.get(match.homeTeamId);
+      const awayTeam = teamsById.get(match.awayTeamId);
+      return normalizeName(homeTeam?.name ?? "") === teamName || normalizeName(awayTeam?.name ?? "") === teamName;
+    })
+    .sort((a, b) => b.matchDate.getTime() - a.matchDate.getTime())[0];
+
+  if (!lastMatch) return 7;
+  const days = Math.round((matchDate.getTime() - lastMatch.matchDate.getTime()) / 86_400_000);
+  return Math.max(2, Math.min(14, days));
+}
+
+function getTravelKm(homeTeamId: number, awayTeamId: number) {
+  return 150 + Math.abs(homeTeamId - awayTeamId) % 7 * 180;
+}
+
 export const matchRouter = createRouter({
   list: publicQuery
     .input(
@@ -146,15 +241,13 @@ export const matchRouter = createRouter({
       const h2hMatches = await db
         .select()
         .from(matches)
-        .where(
-          and(
-            eq(matches.status, "FINISHED"),
-            and(
-              eq(matches.homeTeamId, match[0].homeTeamId),
-              eq(matches.awayTeamId, match[0].awayTeamId)
+            .where(
+              and(
+                eq(matches.status, "FINISHED"),
+                inArray(matches.homeTeamId, [match[0].homeTeamId, match[0].awayTeamId]),
+                inArray(matches.awayTeamId, [match[0].homeTeamId, match[0].awayTeamId])
+              )
             )
-          )
-        )
         .orderBy(desc(matches.matchDate))
         .limit(5);
       
@@ -180,11 +273,13 @@ export const matchRouter = createRouter({
           const db = getDb();
           const match = await db.select().from(matches).where(eq(matches.id, input.matchId)).limit(1);
           if (!match[0]) return null;
-          const [homeTeam, awayTeam] = await Promise.all([
+          const [homeTeam, awayTeam, allMatches, allTeams] = await Promise.all([
             db.select().from(teams).where(eq(teams.id, match[0].homeTeamId)).limit(1),
             db.select().from(teams).where(eq(teams.id, match[0].awayTeamId)).limit(1),
+            db.select().from(matches).where(eq(matches.status, "FINISHED")).orderBy(desc(matches.matchDate)).limit(2000),
+            db.select().from(teams),
           ]);
-          return { match: match[0], ht: homeTeam[0], at: awayTeam[0] };
+          return { match: match[0], ht: homeTeam[0], at: awayTeam[0], allMatches, allTeams };
         },
         async () => {
           const fallback = await getFallbackFootballData();
@@ -197,12 +292,14 @@ export const matchRouter = createRouter({
             match,
             ht,
             at,
+            allMatches: fallback.matches,
+            allTeams: fallback.teams,
           };
         }
       );
 
       if (!data) return null;
-      const { ht, at } = data;
+      const { match, ht, at, allMatches, allTeams } = data;
       
       if (!ht || !at) return null;
       
@@ -228,10 +325,12 @@ export const matchRouter = createRouter({
       const mostLikelyScore = getMostLikelyScore(homeLambda, awayLambda);
       
       // Fatigue info
-      const homeRestDays = Math.floor(Math.random() * 5) + 2;
-      const awayRestDays = Math.floor(Math.random() * 5) + 2;
-      const homeFlights = Math.floor(Math.random() * 3) * 500;
-      const awayFlights = Math.floor(Math.random() * 3) * 500;
+      const homeRecentForm = getRecentTeamForm(ht, allTeams, allMatches, match.matchDate);
+      const awayRecentForm = getRecentTeamForm(at, allTeams, allMatches, match.matchDate);
+      const homeRestDays = getRestDays(ht, allTeams, allMatches, match.matchDate);
+      const awayRestDays = getRestDays(at, allTeams, allMatches, match.matchDate);
+      const homeFlights = 0;
+      const awayFlights = getTravelKm(match.homeTeamId, match.awayTeamId);
       
       const homeFi = calculateFatigueIndex(homeRestDays, homeFlights);
       const awayFi = calculateFatigueIndex(awayRestDays, awayFlights);
@@ -245,6 +344,10 @@ export const matchRouter = createRouter({
         },
         homeXg: homeLambda.toFixed(2),
         awayXg: awayLambda.toFixed(2),
+        recentForm: {
+          home: homeRecentForm,
+          away: awayRecentForm,
+        },
         fatigueIndex: {
           home: {
             value: homeFi,

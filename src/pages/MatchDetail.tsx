@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router";
 import { trpc } from "@/providers/trpc";
 import Header from "@/components/Header";
@@ -29,6 +29,10 @@ import {
   Tooltip,
 } from "recharts";
 import { motion } from "framer-motion";
+import {
+  getStoredSimulatedMatch,
+  type StoredSimulatedMatch,
+} from "@/lib/simulation-results";
 
 // Pie chart colors for match prediction
 
@@ -36,6 +40,10 @@ export default function MatchDetail() {
   const { id } = useParams<{ id: string }>();
   const matchId = Number(id);
   const [tacticalFocus, setTacticalFocus] = useState(50);
+  const [simulatedMatch, setSimulatedMatch] =
+    useState<StoredSimulatedMatch | undefined>(() =>
+      Number.isFinite(matchId) ? getStoredSimulatedMatch(matchId) : undefined
+    );
 
   const { data: match, isLoading: matchLoading } = trpc.match.getById.useQuery({ id: matchId });
   const { data: prediction, isLoading: predLoading } = trpc.match.predict.useQuery(
@@ -43,22 +51,37 @@ export default function MatchDetail() {
     { enabled: !isNaN(matchId) }
   );
 
-  // Form data (last 5 matches simulation)
-  const formData = [
-    { match: "М1", xG: 2.1, xGA: 0.8 },
-    { match: "М2", xG: 1.8, xGA: 1.2 },
-    { match: "М3", xG: 2.5, xGA: 0.5 },
-    { match: "М4", xG: 1.4, xGA: 1.0 },
-    { match: "М5", xG: 1.9, xGA: 0.7 },
-  ];
+  useEffect(() => {
+    const syncSimulatedMatch = () =>
+      setSimulatedMatch(
+        Number.isFinite(matchId) ? getStoredSimulatedMatch(matchId) : undefined
+      );
 
-  const awayFormData = [
-    { match: "М1", xG: 1.2, xGA: 1.5 },
-    { match: "М2", xG: 1.8, xGA: 0.9 },
-    { match: "М3", xG: 1.0, xGA: 2.0 },
-    { match: "М4", xG: 1.5, xGA: 1.1 },
-    { match: "М5", xG: 1.3, xGA: 1.4 },
-  ];
+    window.addEventListener("storage", syncSimulatedMatch);
+    window.addEventListener("statkick:simulation-results", syncSimulatedMatch);
+    window.addEventListener("focus", syncSimulatedMatch);
+
+    return () => {
+      window.removeEventListener("storage", syncSimulatedMatch);
+      window.removeEventListener(
+        "statkick:simulation-results",
+        syncSimulatedMatch
+      );
+      window.removeEventListener("focus", syncSimulatedMatch);
+    };
+  }, [matchId]);
+
+  const formData = prediction?.recentForm.home.length
+    ? prediction.recentForm.home
+    : [
+        { match: "М1", xG: Number(prediction?.homeXg ?? 1.4), xGA: Number(prediction?.awayXg ?? 1.1) },
+      ];
+
+  const awayFormData = prediction?.recentForm.away.length
+    ? prediction.recentForm.away
+    : [
+        { match: "М1", xG: Number(prediction?.awayXg ?? 1.1), xGA: Number(prediction?.homeXg ?? 1.4) },
+      ];
 
   const predictionData = prediction
     ? [
@@ -78,6 +101,14 @@ export default function MatchDetail() {
         away: (parseFloat(prediction.awayXg) * (1 - (tacticalFocus - 50) / 300)).toFixed(2),
       }
     : { home: "1.80", away: "1.20" };
+  const isSimulated = match?.status === "SCHEDULED" && Boolean(simulatedMatch);
+  const displayStatus = isSimulated ? "SIMULATED" : match?.status;
+  const displayHomeGoals = isSimulated
+    ? simulatedMatch?.homeGoals
+    : match?.homeGoals;
+  const displayAwayGoals = isSimulated
+    ? simulatedMatch?.awayGoals
+    : match?.awayGoals;
 
   if (matchLoading) {
     return (
@@ -132,9 +163,9 @@ export default function MatchDetail() {
             </div>
 
             <div className="text-center">
-              {match.status === "FINISHED" ? (
+              {displayStatus !== "SCHEDULED" ? (
                 <div className="text-4xl font-bold text-[#00E701] font-mono-data mb-1">
-                  {match.homeGoals} : {match.awayGoals}
+                  {displayHomeGoals} : {displayAwayGoals}
                 </div>
               ) : (
                 <div className="text-2xl font-bold text-[#3B82F6] mb-1">vs</div>
@@ -150,14 +181,25 @@ export default function MatchDetail() {
               <span
                 className="inline-block mt-2 text-xs px-3 py-1 rounded-full font-medium"
                 style={{
-                  color: match.status === "SCHEDULED" ? "#3B82F6" : "#00E701",
+                  color:
+                    displayStatus === "SCHEDULED"
+                      ? "#3B82F6"
+                      : displayStatus === "SIMULATED"
+                        ? "#A855F7"
+                        : "#00E701",
                   backgroundColor:
-                    match.status === "SCHEDULED"
+                    displayStatus === "SCHEDULED"
                       ? "rgba(59,130,246,0.1)"
-                      : "rgba(0,231,1,0.1)",
+                      : displayStatus === "SIMULATED"
+                        ? "rgba(168,85,247,0.12)"
+                        : "rgba(0,231,1,0.1)",
                 }}
               >
-                {match.status === "SCHEDULED" ? "Предстоит" : "Завершён"}
+                {displayStatus === "SCHEDULED"
+                  ? "Предстоит"
+                  : displayStatus === "SIMULATED"
+                    ? `Симуляция #${simulatedMatch?.runId}`
+                    : "Завершён"}
               </span>
             </div>
 
@@ -207,27 +249,37 @@ export default function MatchDetail() {
 
             <div className="space-y-4 mb-6">
               {match.h2hHistory && match.h2hHistory.length > 0 ? (
-                match.h2hHistory.map((h2h, i) => (
-                  <div
-                    key={i}
-                    className="flex items-center justify-between py-2 border-b border-[#0B192C] last:border-0"
-                  >
-                    <span className="text-xs text-[#9CA3AF]">
-                      {new Date(h2h.matchDate).toLocaleDateString("ru-RU")}
-                    </span>
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm text-white font-medium">
-                        {match.homeTeam?.shortName}
+                match.h2hHistory.map((h2h, i) => {
+                  const sameVenue = h2h.homeTeamId === match.homeTeamId;
+                  const leftName = sameVenue
+                    ? match.homeTeam?.shortName
+                    : match.awayTeam?.shortName;
+                  const rightName = sameVenue
+                    ? match.awayTeam?.shortName
+                    : match.homeTeam?.shortName;
+
+                  return (
+                    <div
+                      key={i}
+                      className="flex items-center justify-between py-2 border-b border-[#0B192C] last:border-0"
+                    >
+                      <span className="text-xs text-[#9CA3AF]">
+                        {new Date(h2h.matchDate).toLocaleDateString("ru-RU")}
                       </span>
-                      <span className="text-sm font-bold text-[#00E701] font-mono-data">
-                        {h2h.homeGoals} : {h2h.awayGoals}
-                      </span>
-                      <span className="text-sm text-white font-medium">
-                        {match.awayTeam?.shortName}
-                      </span>
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm text-white font-medium">
+                          {leftName}
+                        </span>
+                        <span className="text-sm font-bold text-[#00E701] font-mono-data">
+                          {h2h.homeGoals} : {h2h.awayGoals}
+                        </span>
+                        <span className="text-sm text-white font-medium">
+                          {rightName}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               ) : (
                 <div className="text-center py-8 text-[#9CA3AF] text-sm">
                   Нет исторических встреч
